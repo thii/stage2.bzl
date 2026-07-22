@@ -326,7 +326,6 @@ stage2_autotools_build(
     configure = "@hello_src//:configure",
     configure_args = [
         "--disable-nls",
-        "--disable-dependency-tracking",
         "CFLAGS=-O2 -std=gnu17",
         "LDFLAGS=--static",
     ] + STAGE_CC,
@@ -346,7 +345,11 @@ stage2_hermetic_run(
 `STAGE_CC` pins the stage-2 compiler (static) as configure's `CC`/`CXX`
 and `path_trees` puts its `bin/` on `PATH`. The first build bootstraps
 the platform once (~40 min on a small machine); afterwards it is an
-ordinary cached Bazel dependency.
+ordinary cached Bazel dependency. (Unlike this repo's own packages,
+hello keeps dependency tracking enabled: its non-recursive Makefile
+relies on the `.deps` machinery to create build-directory
+subdirectories in out-of-tree builds, and generated-header rules fail
+without them.)
 
 ## Host requirements
 
