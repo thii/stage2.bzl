@@ -286,8 +286,9 @@ gcc_combined_src_repo(
     busybox_x64 = "@busybox_linux_x64//:bin/busybox.static",
 )
 
-# Fully static native host toolchains from musl.cc (GCC 11.2.1). The
-# pinned more.musl.cc URLs are the archived per-version builds.
+# Fully static native host toolchains from musl.cc (GCC 11.2.1). GitHub
+# Actions is blocked by musl.cc, so use WireGuard's byte-identical dated
+# archive first and retain the pinned upstream URL as a fallback.
 http_archive(
     name = "musl_toolchain_linux_arm64",
     build_file_content = """filegroup(
@@ -310,7 +311,10 @@ exports_files(["bin/gcc"])
 """,
     sha256 = "daf336cafa2c3c7daf42f6a46edc960f10a181fcf15ab9f1c43b192e8ad2a069",
     strip_prefix = "aarch64-linux-musl-native",
-    urls = ["https://more.musl.cc/11.2.1/x86_64-linux-musl/aarch64-linux-musl-native.tgz"],
+    urls = [
+        "https://download.wireguard.com/qemu-test/toolchains/20211123/aarch64-linux-musl-native.tgz",
+        "https://more.musl.cc/11.2.1/x86_64-linux-musl/aarch64-linux-musl-native.tgz",
+    ],
 )
 
 http_archive(
@@ -335,7 +339,10 @@ exports_files(["bin/gcc"])
 """,
     sha256 = "eb1db6f0f3c2bdbdbfb993d7ef7e2eeef82ac1259f6a6e1757c33a97dbcef3ad",
     strip_prefix = "x86_64-linux-musl-native",
-    urls = ["https://more.musl.cc/11.2.1/x86_64-linux-musl/x86_64-linux-musl-native.tgz"],
+    urls = [
+        "https://download.wireguard.com/qemu-test/toolchains/20211123/x86_64-linux-musl-native.tgz",
+        "https://more.musl.cc/11.2.1/x86_64-linux-musl/x86_64-linux-musl-native.tgz",
+    ],
 )
 
 # Alpine busybox-static packages (.apk files are tar.gz archives).
