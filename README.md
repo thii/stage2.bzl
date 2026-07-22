@@ -16,6 +16,8 @@ counterpart of the usual prebuilt embedded-toolchain distributions:
 | `//tools/aarch64-none-elf-gcc` | GCC 15.2.0, binutils 2.45, newlib 4.5.0 | AArch64 bare-metal |
 | `//tools/arm-none-eabi-gcc` | GCC 15.2.0, binutils 2.45, newlib 4.5.0 | Arm 32-bit bare-metal |
 | `//tools/mingw-w64-gcc` | GCC 15.2.0, binutils 2.45, mingw-w64 v12 (UCRT) | Windows x86_64 cross; `--enable-threads=win32` |
+| `//tools/riscv-none-elf-gcc-w64` | same as riscv-none-elf-gcc | **Windows-hosted** (Canadian cross, see below) |
+| `//tools/clang` | LLVM/clang + lld 22.1.8 | linux-musl hosted, multi-target; the macOS "leg" |
 
 Each package provides `<name>` (the merged install tree) and `:dist`
 (a reproducible `.tar.gz`). The newlib toolchains are three-line
@@ -25,9 +27,7 @@ shared stage-2 config (`toolchain/stage2.bzl`).
 Deliberately narrowed relative to full binary distributions, for build
 time:
 single multilib, C/C++ only (no Fortran), no bundled GDB, and for mingw
-no winpthreads (so no `std::thread` in libstdc++). CMake/Python/LLVM
-sources are already pinned in `MODULE.bazel` for a future
-`//tools/clang`.
+no winpthreads (so no `std::thread` in libstdc++).
 
 Every build action runs under **`--experimental_use_hermetic_linux_sandbox`**
 (set in `.bazelrc`) with **no `--sandbox_add_mount_pair` at all**: the
@@ -148,6 +148,99 @@ them to sub-configures that are cross-compiling, so plain names must
 resolve to real binutils — neither busybox nor the GNU userland provides
 an `ar`.
 
+### Windows-hosted toolchains: the Canadian cross
+
+`//tools/riscv-none-elf-gcc-w64` is the same RISC-V toolchain with
+`--host=x86_64-w64-mingw32`: a **Canadian cross** (build ≠ host ≠ target).
+No build action ever runs on Windows — everything still executes in the
+empty Linux sandbox — and the three toolchains the build needs are all
+stage-2 artifacts from this repository:
+
+- `CC`/`CXX` = `//tools/mingw-w64-gcc` (build→host) compiles GCC's own
+  sources into static PE executables;
+- `CC_FOR_BUILD` = stage 2 compiles the build-time generators;
+- `//tools/riscv-none-elf-gcc` (build→target, same GCC version, on
+  `PATH`) builds libgcc/newlib/libstdc++, because the freshly built
+  `xgcc` is a Windows binary and cannot run here.
+
+The trust chain is unchanged: zero prebuilt binaries in any producing
+action. `-Wl,--no-insert-timestamp` zeroes the PE header timestamps so
+`:dist` stays byte-reproducible. Windows binaries cannot execute in the
+sandbox, so the PE checks verify the `MZ` and `PE\0\0` signatures and the
+COFF machine field `0x8664` for x86_64 (AMD64).
+`//tools/riscv-none-elf-gcc-w64:dist` produces
+`riscv-none-elf-gcc-w64-15.2.0.tar.gz`. Real smoke tests belong on a Windows
+machine or Wine, outside the trust boundary. Windows ARM64 is deferred
+because xPack does not currently publish that host distribution.
+
+### macOS: cross from Linux against the pinned Apple SDK
+
+macOS has no equivalent of the hermetic sandbox (Seatbelt cannot present
+an empty root, and every darwin process must load Apple's dyld and
+libSystem), so macOS support goes the other direction: **build for
+darwin from inside the Linux sandbox**. Two pieces:
+
+- **The SDK** (`//toolchain:macos-sdk`): Apple's Command Line Tools SDK
+  package, pinned by SHA-256 from Apple's own softwareupdate CDN and
+  extracted from source-built tools only — bsdtar/libarchive reads the
+  outer xar and the inner cpio, and `toolchain/pbzx.c` (~90 lines,
+  compiled in-action) decodes the pbzx layer between them.
+  `toolchain/sdkprune.c` then deletes, by file magic, the couple dozen
+  legacy Mach-O leftovers each SDK release carries (pre-10.8 CRT
+  objects, Tcl/Tk stub archives). What remains is **text**: headers and
+  `.tbd` linker stubs. Apple contributes no executable code to any
+  action; libSystem links at runtime on the user's Mac, exactly like
+  kernel32/UCRT in the mingw story.
+- **The compiler** (`//tools/clang`): clang + lld 22.1.8, built from the
+  pinned LLVM source by stage 2 (with `cmake-s2` bootstrapped from
+  source and `python-s2` as LLVM's build interpreter). clang is
+  inherently multi-target and `ld64.lld` is a production Mach-O linker
+  that ad-hoc code-signs arm64 output — required on Apple Silicon.
+
+`//examples:hello-darwin` links a real arm64 Mach-O executable against
+the SDK inside the same empty sandbox; copy it to any Apple-Silicon Mac
+and it runs. Licensing note: the SDK downloads unauthenticated from
+Apple's CDN, but Apple's license ties SDK *use* to Apple-branded
+hardware — running this build in a Linux VM on a Mac satisfies that
+reading; other setups are your call. The pinned catalog URL can rot when
+Apple rotates product generations (like the Alpine apks); refresh it
+from `swscan.apple.com/content/catalogs/others/*.sucatalog`.
+
+`//tools/clang:clang-darwin-arm64` and
+`//tools/clang:clang-darwin-x86_64` complete the Canadian crosses for
+darwin-hosted toolchains on both Apple Silicon and Intel Macs. CMake and
+Python drive each cross-build; Linux-native `llvm-tblgen` and
+`clang-tblgen` from `//tools/clang:clang` generate build-time tables while
+its Linux clang and lld cross-build the matching arm64 or x86_64 Mach-O
+tools against the pruned SDK. A magic check verifies the installed
+executables are Mach-O. `//tools/clang:clang-darwin-arm64-dist` produces
+`clang-darwin-arm64.tar.gz`; the new
+`//tools/clang:clang-darwin-x86_64-dist` produces
+`clang-darwin-x86_64.tar.gz`.
+
+### Native-host distributions
+
+Five host distributions are built from the Linux sandbox:
+
+| delivered host | CPU | build label | archive | GitHub Actions runner |
+|----------------|-----|-------------|---------|-----------------------|
+| Linux | x86_64 | `//tools/riscv-none-elf-gcc:dist` | `riscv-none-elf-gcc-15.2.0.tar.gz` | GitHub-hosted Ubuntu x64 |
+| Linux | arm64 | `//tools/riscv-none-elf-gcc:dist` | `riscv-none-elf-gcc-15.2.0.tar.gz` | GitHub-hosted Ubuntu arm64 |
+| Windows | x86_64 | `//tools/riscv-none-elf-gcc-w64:dist` | `riscv-none-elf-gcc-w64-15.2.0.tar.gz` | GitHub-hosted Ubuntu x64 |
+| Darwin | x86_64 | `//tools/clang:clang-darwin-x86_64-dist` | `clang-darwin-x86_64.tar.gz` | GitHub-hosted Ubuntu x64 |
+| Darwin | arm64 | `//tools/clang:clang-darwin-arm64-dist` | `clang-darwin-arm64.tar.gz` | GitHub-hosted Ubuntu arm64 |
+
+All five release-matrix jobs use `--jobs=1`: individual build actions already run
+parallel makes, and serial Bazel scheduling keeps hosted-runner memory use
+bounded. Every job runs on GitHub-hosted Ubuntu runners — the Darwin ones
+included, since Darwin toolchains are Canadian crosses that never execute a
+build action on macOS. A cold Darwin chain (stage 2, a native LLVM, then a
+Canadian LLVM) exceeds one 6-hour hosted job, so those jobs carry a Bazel
+disk cache in the Actions cache and resume where the previous run stopped:
+re-run the workflow until it goes green. Note that building on GitHub's
+infrastructure rather than Apple hardware is one of the "your call" setups
+under the SDK-license note above.
+
 ### Trust chain
 
 Shipped artifacts are produced by actions whose input sets contain no
@@ -214,6 +307,11 @@ in `MODULE.bazel` / `toolchain/gcc_combined_repo.bzl`.
 Userland and tool sources: bash 5.3, coreutils 9.7, sed 4.9, grep 3.11,
 findutils 4.10.0, diffutils 3.12, tar 1.35, gzip 1.14, gawk 5.3.2 — by
 SHA-256 in `MODULE.bazel`.
+
+macOS-support sources: zlib 1.3.2, xz 5.8.3, libarchive 3.8.7, cmake
+3.31.7, Python 3.12.8, LLVM 22.1.8, and the Apple Command Line Tools
+SDK package (MacOSX26.5.sdk; headers + `.tbd` text stubs after pruning)
+— by SHA-256 in `MODULE.bazel`.
 
 Bootstrap seeds (stage 0/1 only): musl.cc native toolchains (pinned
 `more.musl.cc` 11.2.1 archives) and Alpine `busybox-static` 1.37.0-r20

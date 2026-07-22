@@ -1,4 +1,5 @@
 load(":build_defs.bzl", "autotools_build", "dist_tarball", "make_bootstrap", "tree_merge")
+load(":stage2.bzl", "STAGE_CC", "stage2_autotools_build", "stage2_hermetic_run")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -328,4 +329,220 @@ autotools_build(
     srcs = "@gcc_combined_src//:srcs",
     tool_subdir = _TOOL_SUBDIR,
     userland = ":userland-s2",
+)
+
+# ---------------------------------------------------------------------------
+# macOS host support, part 1: the SDK-extraction toolchain. Apple's
+# CLTools .pkg is a xar archive whose Payload is a pbzx-compressed cpio;
+# bsdtar (libarchive) reads both the xar and the cpio, and pbzx.c is the
+# ~90-line decoder in between, compiled in-action by stage 2. All built
+# from pinned source like everything else at this tier.
+# ---------------------------------------------------------------------------
+
+# zlib's configure is hand-written (not autoconf): it takes --prefix and
+# --static and reads CC from the environment, so it runs as a plain
+# hermetic script instead of through autotools_build.
+stage2_hermetic_run(
+    name = "zlib-s2",
+    files = {"@zlib_src//:configure": "CONFIGURE"},
+    out_tree = True,
+    path_trees = [":host-gcc-s2"],
+    script = """export CC="$CC_FOR_BUILD" CFLAGS=-O2
+"$CONFIG_SHELL" %{CONFIGURE} --prefix=%{OUT} --static
+make -j %{JOBS}
+make install
+""",
+    srcs = ["@zlib_src//:srcs"],
+)
+
+stage2_autotools_build(
+    name = "xz-s2",
+    configure = "@xz_src//:configure",
+    configure_args = [
+        "--disable-shared",
+        "--enable-static",
+        "--disable-nls",
+        "--disable-xz",
+        "--disable-xzdec",
+        "--disable-lzmadec",
+        "--disable-lzmainfo",
+        "--disable-scripts",
+        "--disable-doc",
+        "--disable-dependency-tracking",
+        "CFLAGS=-O2",
+        "LDFLAGS=--static",
+    ] + STAGE_CC,
+    path_trees = [":host-gcc-s2"],
+    srcs = "@xz_src//:srcs",
+)
+
+stage2_autotools_build(
+    name = "libmd-s2",
+    configure = "@libmd_src//:configure",
+    configure_args = [
+        "--disable-shared",
+        "--enable-static",
+        "--disable-dependency-tracking",
+        "CFLAGS=-O2",
+        "LDFLAGS=--static",
+    ] + STAGE_CC,
+    path_trees = [":host-gcc-s2"],
+    srcs = "@libmd_src//:srcs",
+)
+
+stage2_autotools_build(
+    name = "expat-s2",
+    configure = "@expat_src//:configure",
+    configure_args = [
+        "--disable-shared",
+        "--enable-static",
+        "--disable-dependency-tracking",
+        "--without-docbook",
+        "--without-examples",
+        "--without-tests",
+        "--without-xmlwf",
+        "CFLAGS=-O2",
+        "LDFLAGS=--static",
+    ] + STAGE_CC,
+    path_trees = [":host-gcc-s2"],
+    srcs = "@expat_src//:srcs",
+)
+
+stage2_autotools_build(
+    name = "libarchive-s2",
+    configure = "@libarchive_src//:configure",
+    configure_args = [
+        "--disable-shared",
+        "--enable-static",
+        "--disable-dependency-tracking",
+        "--disable-bsdcat",
+        "--disable-bsdcpio",
+        "--disable-bsdunzip",
+        "--disable-acl",
+        "--disable-xattr",
+        "--without-bz2lib",
+        "--without-libb2",
+        "--without-iconv",
+        "--without-lz4",
+        "--without-zstd",
+        "--without-openssl",
+        "--without-xml2",
+        # xar's XML table of contents needs a parser; expat is the small one.
+        "--with-expat",
+        "CFLAGS=-O2",
+        # zlib + liblzma + expat come from the trees copied into this prefix.
+        "CPPFLAGS=-I%{OUT}/include",
+        "LDFLAGS=--static -L%{OUT}/lib",
+    ] + STAGE_CC,
+    install_base = [
+        ":expat-s2",
+        ":libmd-s2",
+        ":zlib-s2",
+        ":xz-s2",
+    ],
+    path_trees = [":host-gcc-s2"],
+    srcs = "@libarchive_src//:srcs",
+)
+
+# The extracted SDK: headers and .tbd linker stubs only. sdkprune deletes
+# the few Mach-O leftovers each release carries (pre-10.8 CRT startup
+# objects, Tcl/Tk stub archives, stray framework executables) by file
+# magic, so no prebuilt binary survives into the action inputs of
+# anything that links against this tree. None of the pruned files
+# participates in a macos11+ link.
+stage2_hermetic_run(
+    name = "macos-sdk",
+    files = {
+        ":libarchive-s2": "LIBARCHIVE",
+        ":pbzx.c": "PBZX_C",
+        ":sdkprune.c": "SDKPRUNE_C",
+        "@macos_sdk_pkg//file": "PKG",
+    },
+    out_tree = True,
+    path_trees = [
+        ":libarchive-s2",
+        ":host-gcc-s2",
+    ],
+    script = """$CC_FOR_BUILD -O2 -o pbzx %{PBZX_C} -I%{LIBARCHIVE}/include -L%{LIBARCHIVE}/lib -llzma
+$CC_FOR_BUILD -O2 -o sdkprune %{SDKPRUNE_C}
+bsdtar -xf %{PKG}
+./pbzx Payload payload.cpio
+mkdir tree
+bsdtar -xf payload.cpio -C tree
+sdk=$(find tree/Library/Developer/CommandLineTools/SDKs -mindepth 1 -maxdepth 1 -type d -name 'MacOSX*.sdk' | head -1)
+if [ -z "$sdk" ]; then
+    echo "no SDK directory found in the pkg payload" >&2
+    exit 1
+fi
+./sdkprune "$sdk"
+# Pruning leaves framework-internal symlinks to the deleted archives
+# dangling; Bazel (rightly) rejects dangling links in tree artifacts.
+find "$sdk" -xtype l -delete
+# Bazel's tree-artifact walker follows directory symlinks, so cyclic
+# links (Ruby.framework's Headers/ruby self-reference, the same species
+# as musl.cc's `usr -> .`) must go: delete any symlink whose resolved
+# target is an ancestor of the link itself.
+find "$sdk" -type l | while IFS= read -r l; do
+    t=$(readlink -f "$l") || { rm -f "$l"; continue; }
+    parent=$(readlink -f "$(dirname "$l")")
+    case "$parent/" in
+        "$t"/*) rm -f "$l" ;;
+    esac
+done
+cp -a "$sdk"/. %{OUT}/
+""",
+)
+
+# ---------------------------------------------------------------------------
+# macOS host support, part 2: build tooling for //tools/clang. cmake
+# self-bootstraps with only a C++ compiler and make; CPython is the build
+# interpreter LLVM's cmake requires. Both static, both stage-2 tier.
+# ---------------------------------------------------------------------------
+
+# cmake's `configure` wrapper execs its bootstrap script. The phase-1
+# bootstrap cmake runs *inside this action*, so it must be static too
+# (LDFLAGS); the final cmake gets -static via CMAKE_EXE_LINKER_FLAGS.
+stage2_hermetic_run(
+    name = "cmake-s2",
+    files = {"@cmake_src//:configure": "CONFIGURE"},
+    out_tree = True,
+    path_trees = [":host-gcc-s2"],
+    script = """mkdir -p "$SCRATCH/cmake-bootstrap-include/linux"
+: > "$SCRATCH/cmake-bootstrap-include/linux/fs.h"
+export CXXFLAGS="${CXXFLAGS-}${CXXFLAGS:+ }-idirafter $SCRATCH/cmake-bootstrap-include"
+export CC="$CC_FOR_BUILD" CXX="$CXX_FOR_BUILD" LDFLAGS=-static
+"$CONFIG_SHELL" %{CONFIGURE} --prefix=%{OUT} --parallel=%{JOBS} -- \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_USE_OPENSSL=OFF \
+    -DBUILD_TESTING=OFF \
+    -DCMAKE_EXE_LINKER_FLAGS=-static
+make -j %{JOBS}
+make install
+""",
+    srcs = ["@cmake_src//:srcs"],
+)
+
+# Static CPython: LINKFORSHARED defaults to -export-dynamic, which is
+# meaningless under -static, so it is blanked on the make command line
+# (the top-level configure does not forward make variables).
+stage2_autotools_build(
+    name = "python-s2",
+    configure = "@python_src//:configure",
+    configure_args = [
+        "--disable-shared",
+        "--without-ensurepip",
+        "--disable-test-modules",
+        "--without-readline",
+        "--disable-dependency-tracking",
+        "ac_cv_func_dlopen=no",
+        "MODULE_BUILDTYPE=static",
+        "CFLAGS=-O2",
+        "CPPFLAGS=-I%{OUT}/include",
+        "LDFLAGS=--static -L%{OUT}/lib",
+    ] + STAGE_CC,
+    install_base = [":zlib-s2"],
+    install_targets = "LINKFORSHARED=' ' install",
+    make_targets = "LINKFORSHARED=' '",
+    path_trees = [":host-gcc-s2"],
+    srcs = "@python_src//:srcs",
 )

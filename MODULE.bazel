@@ -31,6 +31,7 @@ module(
 bazel_dep(name = "platforms", version = "1.1.0")
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
 _SRC_TREE_BUILD = """filegroup(
     name = "srcs",
@@ -158,9 +159,9 @@ exports_files([
     urls = ["https://downloads.sourceforge.net/project/mingw-w64/mingw-w64/mingw-w64-release/mingw-w64-v12.0.0.tar.bz2"],
 )
 
-# CMake, Python and LLVM: pinned for the future //tools/clang (skipped
-# for now — unreferenced repos are never fetched). cmake self-bootstraps
-# with only a C++ compiler and make; LLVM requires cmake and python3.
+# CMake, Python and LLVM: pinned for the implemented //tools/clang toolchain.
+# CMake self-bootstraps with only a C++ compiler and make; LLVM requires
+# CMake and Python 3.
 http_archive(
     name = "cmake_src",
     build_file_content = _SRC_TREE_BUILD,
@@ -177,7 +178,8 @@ http_archive(
     urls = ["https://www.python.org/ftp/python/3.12.8/Python-3.12.8.tar.xz"],
 )
 
-# LLVM 19.1.7 (reserved for //tools/clang).
+# LLVM 22.1.8: clang + lld for //tools/clang. The exported CMakeLists.txt
+# is how build scripts locate the source root (filegroups have no root).
 http_archive(
     name = "llvm_src",
     build_file_content = """filegroup(
@@ -185,10 +187,80 @@ http_archive(
     srcs = glob(["**"]),
     visibility = ["//visibility:public"],
 )
+exports_files(["llvm/CMakeLists.txt"])
 """,
-    sha256 = "82401fea7b79d0078043f7598b835284d6650a75b93e64b6f761ea7b63097501",
-    strip_prefix = "llvm-project-19.1.7.src",
-    urls = ["https://github.com/llvm/llvm-project/releases/download/llvmorg-19.1.7/llvm-project-19.1.7.src.tar.xz"],
+    sha256 = "922f1817a0df7b1489272d18134ee0087a8b068828f87ac63b9861b1a9965888",
+    strip_prefix = "llvm-project-22.1.8.src",
+    urls = ["https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.8/llvm-project-22.1.8.src.tar.xz"],
+)
+
+# ---------------------------------------------------------------------------
+# macOS host support: sources for the SDK-extraction toolchain (zlib +
+# liblzma + libarchive/bsdtar — the .pkg is xar-wrapped, pbzx-compressed
+# cpio), and the Apple Command Line Tools SDK itself.
+# ---------------------------------------------------------------------------
+
+http_archive(
+    name = "zlib_src",
+    build_file_content = _SRC_TREE_BUILD,
+    sha256 = "bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16",
+    strip_prefix = "zlib-1.3.2",
+    # fossils/ retains every release; zlib.net's top level rotates.
+    urls = ["https://zlib.net/fossils/zlib-1.3.2.tar.gz"],
+)
+
+http_archive(
+    name = "xz_src",
+    build_file_content = _SRC_TREE_BUILD,
+    sha256 = "3d3a1b973af218114f4f889bbaa2f4c037deaae0c8e815eec381c3d546b974a0",
+    strip_prefix = "xz-5.8.3",
+    urls = ["https://github.com/tukaani-project/xz/releases/download/v5.8.3/xz-5.8.3.tar.gz"],
+)
+
+# libmd: MD5/SHA1 for libarchive — its xar reader is also compiled out
+# without digest providers (the xar TOC carries checksums), and OpenSSL
+# stays out of this tree.
+http_archive(
+    name = "libmd_src",
+    build_file_content = _SRC_TREE_BUILD,
+    sha256 = "1bd6aa42275313af3141c7cf2e5b964e8b1fd488025caf2f971f43b00776b332",
+    strip_prefix = "libmd-1.1.0",
+    urls = ["https://archive.hadrons.org/software/libmd/libmd-1.1.0.tar.xz"],
+)
+
+# expat: the XML parser libarchive's xar reader requires (the xar table
+# of contents is XML; without a parser the format is compiled out).
+http_archive(
+    name = "expat_src",
+    build_file_content = _SRC_TREE_BUILD,
+    sha256 = "21b778b34ec837c2ac285aef340f9fb5fa063a811b21ea4d2412a9702c88995c",
+    strip_prefix = "expat-2.7.2",
+    urls = ["https://github.com/libexpat/libexpat/releases/download/R_2_7_2/expat-2.7.2.tar.xz"],
+)
+
+http_archive(
+    name = "libarchive_src",
+    build_file_content = _SRC_TREE_BUILD,
+    sha256 = "d3a8ba457ae25c27c84fd2830a2efdcc5b1d40bf585d4eb0d35f47e99e5d4774",
+    strip_prefix = "libarchive-3.8.7",
+    urls = ["https://libarchive.org/downloads/libarchive-3.8.7.tar.xz"],
+)
+
+# Apple Command Line Tools SDK (MacOSX26.5.sdk): headers and .tbd linker
+# stubs — text, no executable code once //toolchain:macos-sdk prunes the
+# few legacy Mach-O leftovers. Served unauthenticated from Apple's
+# softwareupdate CDN; the URL is one catalog product and can rot when
+# Apple rotates generations (like the Alpine apks — bump URL + sha256
+# from swscan.apple.com/content/catalogs/others/*.sucatalog, products
+# whose Packages list a CLTools_macOSNMOS_SDK.pkg). NOTE: Apple's SDK
+# license ties SDK *use* to Apple-branded hardware; building on a Linux
+# VM hosted on a Mac satisfies that reading, other setups are the user's
+# call — see README.
+http_file(
+    name = "macos_sdk_pkg",
+    downloaded_file_path = "CLTools_macOSNMOS_SDK.pkg",
+    sha256 = "debe353b27a13cd678b26ab216a040acf07b62c0639d8ac522df4ca07d121eb2",
+    url = "https://swcdn.apple.com/content/downloads/33/19/140-17812-A_21ZLMMLY4E/zu3xwktttpoe71qiawhzgzvqss6rovawsa/CLTools_macOSNMOS_SDK.pkg",
 )
 
 # musl libc: the C library of the self-hosted stage-1/stage-2 host

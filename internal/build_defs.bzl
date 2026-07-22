@@ -358,6 +358,71 @@ tree_merge = rule(
     doc = "Merges install trees into one prefix (later trees win on conflicts).",
 )
 
+def _hermetic_run_impl(ctx):
+    if ctx.attr.out_tree:
+        out = ctx.actions.declare_directory(ctx.label.name)
+    else:
+        out = ctx.actions.declare_file(ctx.attr.out or ctx.label.name)
+
+    script = _preamble(ctx, out.path + ".scratch", [])
+    if ctx.file.make:
+        script += 'ln -sf "$ROOT/{}" "$SCRATCH/tools/make"\n'.format(ctx.file.make.path)
+
+    substitutions = {
+        "OUT": '"$ROOT"/' + out.path,
+        "JOBS": str(ctx.attr.jobs),
+    }
+    file_inputs = []
+    for label, token in ctx.attr.files.items():
+        found = label.files.to_list()
+        if len(found) != 1:
+            fail("hermetic_run.files: {} must resolve to exactly one file/tree, got {}".format(
+                label.label,
+                len(found),
+            ))
+        file_inputs.append(found[0])
+        substitutions[token] = '"$ROOT"/' + found[0].path
+
+    script += 'cd "$SCRATCH/build"\n'
+    script += _subst(ctx.attr.script, substitutions)
+
+    _run_shell(
+        ctx,
+        script,
+        inputs = depset(
+            ctx.files.srcs + ctx.files.path_trees + file_inputs +
+            ([ctx.file.make] if ctx.file.make else []) + _common_inputs(ctx),
+        ),
+        outputs = [out],
+        mnemonic = "HermeticRun",
+        progress_message = "Running hermetic script (empty sandbox) %{label}",
+    )
+    return [DefaultInfo(files = depset([out]))]
+
+hermetic_run = rule(
+    implementation = _hermetic_run_impl,
+    attrs = _common_attrs() | {
+        "script": attr.string(
+            mandatory = True,
+            doc = "Shell body run from $SCRATCH/build after the preamble. " +
+                  "%{OUT} expands to the output path, %{JOBS} to the jobs " +
+                  "count, and each `files` token to its file's path (all " +
+                  "absolute via $ROOT).",
+        ),
+        "files": attr.label_keyed_string_dict(
+            allow_files = True,
+            doc = "Input files/trees exposed to the script: label -> token name.",
+        ),
+        "srcs": attr.label_list(allow_files = True),
+        "out": attr.string(doc = "Output file name (default: target name)."),
+        "out_tree": attr.bool(doc = "Declare the output as a directory tree."),
+        "make": attr.label(allow_single_file = True, cfg = "exec"),
+        "path_trees": attr.label_list(allow_files = True),
+        "jobs": attr.int(default = 4),
+    },
+    doc = "Runs an arbitrary script in the hermetic sandbox with the stage userland.",
+)
+
 def _dist_tarball_impl(ctx):
     out = ctx.actions.declare_file(ctx.attr.out or ctx.label.name + ".tar.gz")
     tree = ctx.file.tree
