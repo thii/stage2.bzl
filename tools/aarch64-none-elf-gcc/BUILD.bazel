@@ -1,0 +1,11 @@
+# GNU AArch64 bare-metal toolchain: GCC 15.2.0 + binutils 2.45 +
+# newlib 4.5.0.
+
+load("//toolchain:gcc.bzl", "gcc")
+
+package(default_visibility = ["//visibility:public"])
+
+gcc(
+    name = "aarch64-none-elf-gcc",
+    target = "aarch64-none-elf",
+)

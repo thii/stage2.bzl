@@ -1,0 +1,288 @@
+"""stage2.bzl: developer tools built from source with Bazel, inside the
+hermetic Linux sandbox (--experimental_use_hermetic_linux_sandbox) without
+mounting anything from the host. The name marks the trust boundary: from
+stage 2 of the bootstrap onward, no action has any prebuilt binary among
+its inputs.
+
+First tool: the riscv-none-elf GCC toolchain.
+
+The first tools are GNU cross toolchains built from these components:
+  - GCC 15.2.0
+  - binutils 2.45
+  - newlib 4.5.0
+  - target riscv-none-elf, default architecture rv32imac/ilp32
+
+Because the sandbox root is empty (no /bin, /lib, /usr, not even /bin/sh),
+every build prerequisite is a pinned download that runs standalone:
+  - host C/C++ compiler: musl.cc static native toolchain (GCC 11.2.1);
+    static binaries need no ELF interpreter, so they exec in an empty root,
+    and -static makes every binary they produce equally self-sufficient;
+  - bootstrap shell + userland: Alpine's busybox-static, used only until
+    the from-source GNU userland (bash, coreutils, ...) is built;
+  - GNU make: bootstrapped from source via its shipped build.sh, which is
+    designed to build make without an existing make.
+"""
+
+module(
+    name = "stage2.bzl",
+    version = "0.1.0",
+)
+
+bazel_dep(name = "platforms", version = "1.1.0")
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+_SRC_TREE_BUILD = """filegroup(
+    name = "srcs",
+    srcs = glob(["**"]),
+    visibility = ["//visibility:public"],
+)
+exports_files(["configure"])
+"""
+
+http_archive(
+    name = "make_src",
+    build_file_content = _SRC_TREE_BUILD,
+    sha256 = "dd16fb1d67bfab79a72f5e8390735c49e3e8e70b4945a15ab1f81ddb78658fb3",
+    strip_prefix = "make-4.4.1",
+    urls = ["https://ftp.gnu.org/gnu/make/make-4.4.1.tar.gz"],
+)
+
+http_archive(
+    name = "binutils_src",
+    build_file_content = _SRC_TREE_BUILD,
+    sha256 = "c50c0e7f9cb188980e2cc97e4537626b1672441815587f1eab69d2a1bfbef5d2",
+    strip_prefix = "binutils-2.45",
+    urls = ["https://ftp.gnu.org/gnu/binutils/binutils-2.45.tar.xz"],
+)
+
+# GNU userland sources: bash, coreutils, sed, grep, findutils, diffutils,
+# tar and gzip (plus gawk below) are compiled by the stage-1 toolchain
+# into the from-source userland (//toolchain:userland-s2) that every
+# action from stage 2 onward runs on, so no prebuilt binary reaches any
+# shipped-artifact action. The prebuilt Alpine busybox is bootstrap-only
+# (stage 0/1 and the userland package builds themselves).
+http_archive(
+    name = "bash_src",
+    build_file_content = _SRC_TREE_BUILD,
+    sha256 = "0d5cd86965f869a26cf64f4b71be7b96f90a3ba8b3d74e27e8e9d9d5550f31ba",
+    strip_prefix = "bash-5.3",
+    urls = ["https://ftp.gnu.org/gnu/bash/bash-5.3.tar.gz"],
+)
+
+http_archive(
+    name = "coreutils_src",
+    build_file_content = _SRC_TREE_BUILD,
+    sha256 = "e8bb26ad0293f9b5a1fc43fb42ba970e312c66ce92c1b0b16713d7500db251bf",
+    strip_prefix = "coreutils-9.7",
+    urls = ["https://ftp.gnu.org/gnu/coreutils/coreutils-9.7.tar.xz"],
+)
+
+http_archive(
+    name = "sed_src",
+    build_file_content = _SRC_TREE_BUILD,
+    sha256 = "6e226b732e1cd739464ad6862bd1a1aba42d7982922da7a53519631d24975181",
+    strip_prefix = "sed-4.9",
+    urls = ["https://ftp.gnu.org/gnu/sed/sed-4.9.tar.xz"],
+)
+
+http_archive(
+    name = "grep_src",
+    build_file_content = _SRC_TREE_BUILD,
+    sha256 = "1db2aedde89d0dea42b16d9528f894c8d15dae4e190b59aecc78f5a951276eab",
+    strip_prefix = "grep-3.11",
+    urls = ["https://ftp.gnu.org/gnu/grep/grep-3.11.tar.xz"],
+)
+
+http_archive(
+    name = "findutils_src",
+    build_file_content = _SRC_TREE_BUILD,
+    sha256 = "1387e0b67ff247d2abde998f90dfbf70c1491391a59ddfecb8ae698789f0a4f5",
+    strip_prefix = "findutils-4.10.0",
+    urls = ["https://ftp.gnu.org/gnu/findutils/findutils-4.10.0.tar.xz"],
+)
+
+http_archive(
+    name = "diffutils_src",
+    build_file_content = _SRC_TREE_BUILD,
+    sha256 = "7c8b7f9fc8609141fdea9cece85249d308624391ff61dedaf528fcb337727dfd",
+    strip_prefix = "diffutils-3.12",
+    urls = ["https://ftp.gnu.org/gnu/diffutils/diffutils-3.12.tar.xz"],
+)
+
+http_archive(
+    name = "tar_src",
+    build_file_content = _SRC_TREE_BUILD,
+    sha256 = "4d62ff37342ec7aed748535323930c7cf94acf71c3591882b26a7ea50f3edc16",
+    strip_prefix = "tar-1.35",
+    urls = ["https://ftp.gnu.org/gnu/tar/tar-1.35.tar.xz"],
+)
+
+http_archive(
+    name = "gzip_src",
+    build_file_content = _SRC_TREE_BUILD,
+    sha256 = "01a7b881bd220bfdf615f97b8718f80bdfd3f6add385b993dcf6efd14e8c0ac6",
+    strip_prefix = "gzip-1.14",
+    urls = ["https://ftp.gnu.org/gnu/gzip/gzip-1.14.tar.xz"],
+)
+
+# gawk source: vanilla busybox awk miscompiles GCC's option tables (its
+# regex handling of raw language names like "C++" in optc-gen.awk differs
+# from gawk/mawk, silently dropping CL_CXX from options), so a real awk is
+# built from source and put on PATH — GCC's configure prefers `gawk` by
+# name. Alpine's busybox works only because Alpine patches it.
+http_archive(
+    name = "gawk_src",
+    build_file_content = _SRC_TREE_BUILD,
+    sha256 = "f8c3486509de705192138b00ef2c00bbbdd0e84c30d5c07d23fc73a9dc4cc9cc",
+    strip_prefix = "gawk-5.3.2",
+    urls = ["https://ftp.gnu.org/gnu/gawk/gawk-5.3.2.tar.xz"],
+)
+
+# mingw-w64: Windows headers and CRT for the x86_64-w64-mingw32 cross
+# toolchain (//tools/mingw-w64-gcc).
+http_archive(
+    name = "mingw_w64_src",
+    build_file_content = """filegroup(
+    name = "srcs",
+    srcs = glob(["**"]),
+    visibility = ["//visibility:public"],
+)
+exports_files([
+    "mingw-w64-headers/configure",
+    "mingw-w64-crt/configure",
+])
+""",
+    sha256 = "cc41898aac4b6e8dd5cffd7331b9d9515b912df4420a3a612b5ea2955bbeed2f",
+    strip_prefix = "mingw-w64-v12.0.0",
+    urls = ["https://downloads.sourceforge.net/project/mingw-w64/mingw-w64/mingw-w64-release/mingw-w64-v12.0.0.tar.bz2"],
+)
+
+# CMake, Python and LLVM: pinned for the future //tools/clang (skipped
+# for now — unreferenced repos are never fetched). cmake self-bootstraps
+# with only a C++ compiler and make; LLVM requires cmake and python3.
+http_archive(
+    name = "cmake_src",
+    build_file_content = _SRC_TREE_BUILD,
+    sha256 = "a6d2eb1ebeb99130dfe63ef5a340c3fdb11431cce3d7ca148524c125924cea68",
+    strip_prefix = "cmake-3.31.7",
+    urls = ["https://github.com/Kitware/CMake/releases/download/v3.31.7/cmake-3.31.7.tar.gz"],
+)
+
+http_archive(
+    name = "python_src",
+    build_file_content = _SRC_TREE_BUILD,
+    sha256 = "c909157bb25ec114e5869124cc2a9c4a4d4c1e957ca4ff553f1edc692101154e",
+    strip_prefix = "Python-3.12.8",
+    urls = ["https://www.python.org/ftp/python/3.12.8/Python-3.12.8.tar.xz"],
+)
+
+# LLVM 19.1.7 (reserved for //tools/clang).
+http_archive(
+    name = "llvm_src",
+    build_file_content = """filegroup(
+    name = "srcs",
+    srcs = glob(["**"]),
+    visibility = ["//visibility:public"],
+)
+""",
+    sha256 = "82401fea7b79d0078043f7598b835284d6650a75b93e64b6f761ea7b63097501",
+    strip_prefix = "llvm-project-19.1.7.src",
+    urls = ["https://github.com/llvm/llvm-project/releases/download/llvmorg-19.1.7/llvm-project-19.1.7.src.tar.xz"],
+)
+
+# musl libc: the C library of the self-hosted stage-1/stage-2 host
+# toolchains (//toolchain:host-gcc-s1/-s2). musl builds with no kernel
+# headers and no tools beyond sh/make/cc.
+http_archive(
+    name = "musl_src",
+    build_file_content = _SRC_TREE_BUILD,
+    sha256 = "a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596fc7c75e4",
+    strip_prefix = "musl-1.2.5",
+    urls = ["https://musl.libc.org/releases/musl-1.2.5.tar.gz"],
+)
+
+# GCC 15.2.0 with newlib 4.5.0 and the gmp/mpfr/mpc/isl prerequisites
+# assembled into a single "combined tree" (the versions match
+# gcc-15.2.0/contrib/download_prerequisites). See the repository rule for
+# the pinned URLs and checksums of the individual archives.
+gcc_combined_src_repo = use_repo_rule("//toolchain:gcc_combined_repo.bzl", "gcc_combined_src_repo")
+
+gcc_combined_src_repo(
+    name = "gcc_combined_src",
+    busybox_arm64 = "@busybox_linux_arm64//:bin/busybox.static",
+    busybox_x64 = "@busybox_linux_x64//:bin/busybox.static",
+)
+
+# Fully static native host toolchains from musl.cc (GCC 11.2.1). The
+# pinned more.musl.cc URLs are the archived per-version builds.
+http_archive(
+    name = "musl_toolchain_linux_arm64",
+    build_file_content = """filegroup(
+    name = "all",
+    # No bare glob(["**"]): the tree contains a `usr -> .` self-symlink
+    # that would cause infinite symlink expansion.
+    srcs = glob(
+        [
+            "aarch64-linux-musl/**",
+            "bin/**",
+            "include/**",
+            "lib/**",
+            "libexec/**",
+        ],
+        allow_empty = True,
+    ),
+    visibility = ["//visibility:public"],
+)
+exports_files(["bin/gcc"])
+""",
+    sha256 = "daf336cafa2c3c7daf42f6a46edc960f10a181fcf15ab9f1c43b192e8ad2a069",
+    strip_prefix = "aarch64-linux-musl-native",
+    urls = ["https://more.musl.cc/11.2.1/x86_64-linux-musl/aarch64-linux-musl-native.tgz"],
+)
+
+http_archive(
+    name = "musl_toolchain_linux_x64",
+    build_file_content = """filegroup(
+    name = "all",
+    # No bare glob(["**"]): the tree contains a `usr -> .` self-symlink
+    # that would cause infinite symlink expansion.
+    srcs = glob(
+        [
+            "bin/**",
+            "include/**",
+            "lib/**",
+            "libexec/**",
+            "x86_64-linux-musl/**",
+        ],
+        allow_empty = True,
+    ),
+    visibility = ["//visibility:public"],
+)
+exports_files(["bin/gcc"])
+""",
+    sha256 = "eb1db6f0f3c2bdbdbfb993d7ef7e2eeef82ac1259f6a6e1757c33a97dbcef3ad",
+    strip_prefix = "x86_64-linux-musl-native",
+    urls = ["https://more.musl.cc/11.2.1/x86_64-linux-musl/x86_64-linux-musl-native.tgz"],
+)
+
+# Alpine busybox-static packages (.apk files are tar.gz archives).
+# Caveat: dl-cdn only serves the current -rN revision of an active branch,
+# so this URL can rot when Alpine 3.22 bumps the package. If the fetch 404s,
+# bump the version/sha256 here, or mirror the pinned apk somewhere durable
+# and append that mirror to `urls` (the sha256 keeps any mirror honest).
+http_archive(
+    name = "busybox_linux_arm64",
+    build_file_content = 'exports_files(["bin/busybox.static"])',
+    sha256 = "ee469aee2958feffd7f64dd96655704025ff60af614f77a1d7323dc237c34da2",
+    type = "tar.gz",
+    urls = ["https://dl-cdn.alpinelinux.org/alpine/v3.22/main/aarch64/busybox-static-1.37.0-r20.apk"],
+)
+
+http_archive(
+    name = "busybox_linux_x64",
+    build_file_content = 'exports_files(["bin/busybox.static"])',
+    sha256 = "488ad6efd04b5a722719e79f8e0dcc2c24afd6758867af3ce41b04839e60c74b",
+    type = "tar.gz",
+    urls = ["https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/busybox-static-1.37.0-r20.apk"],
+)

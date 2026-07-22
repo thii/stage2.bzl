@@ -1,0 +1,331 @@
+load(":build_defs.bzl", "autotools_build", "dist_tarball", "make_bootstrap", "tree_merge")
+
+package(default_visibility = ["//visibility:public"])
+
+# ---------------------------------------------------------------------------
+# Host-architecture selection for the hermetic prerequisites.
+# ---------------------------------------------------------------------------
+
+_NO_MATCH = "this workspace's hermetic prerequisites are only wired for x86_64/aarch64 Linux hosts"
+
+alias(
+    name = "busybox",
+    actual = select(
+        {
+            "@platforms//cpu:aarch64": "@busybox_linux_arm64//:bin/busybox.static",
+            "@platforms//cpu:x86_64": "@busybox_linux_x64//:bin/busybox.static",
+        },
+        no_match_error = _NO_MATCH,
+    ),
+)
+
+alias(
+    name = "musl_files",
+    actual = select(
+        {
+            "@platforms//cpu:aarch64": "@musl_toolchain_linux_arm64//:all",
+            "@platforms//cpu:x86_64": "@musl_toolchain_linux_x64//:all",
+        },
+        no_match_error = _NO_MATCH,
+    ),
+)
+
+alias(
+    name = "musl_gcc",
+    actual = select(
+        {
+            "@platforms//cpu:aarch64": "@musl_toolchain_linux_arm64//:bin/gcc",
+            "@platforms//cpu:x86_64": "@musl_toolchain_linux_x64//:bin/gcc",
+        },
+        no_match_error = _NO_MATCH,
+    ),
+)
+
+# The self-hosted host toolchain targets <arch>-unknown-linux-musl (same
+# CPU as the build host, musl libc, fully static).
+_MUSL_TARGET = select(
+    {
+        "@platforms//cpu:aarch64": ["--target=aarch64-unknown-linux-musl"],
+        "@platforms//cpu:x86_64": ["--target=x86_64-unknown-linux-musl"],
+    },
+    no_match_error = _NO_MATCH,
+)
+
+# Compiler spellings for stage-2 and final builds: the stage-1/stage-2
+# driver binaries carry the full target-triplet prefix.
+_STAGE_CC = select(
+    {
+        "@platforms//cpu:aarch64": [
+            "CC=aarch64-unknown-linux-musl-gcc -static",
+            "CXX=aarch64-unknown-linux-musl-g++ -static",
+        ],
+        "@platforms//cpu:x86_64": [
+            "CC=x86_64-unknown-linux-musl-gcc -static",
+            "CXX=x86_64-unknown-linux-musl-g++ -static",
+        ],
+    },
+    no_match_error = _NO_MATCH,
+)
+
+_STAGE_CC_ONLY = select(
+    {
+        "@platforms//cpu:aarch64": ["CC=aarch64-unknown-linux-musl-gcc -static"],
+        "@platforms//cpu:x86_64": ["CC=x86_64-unknown-linux-musl-gcc -static"],
+    },
+    no_match_error = _NO_MATCH,
+)
+
+_STAGE_BUILD_CC = select(
+    {
+        "@platforms//cpu:aarch64": "aarch64-unknown-linux-musl-gcc -static",
+        "@platforms//cpu:x86_64": "x86_64-unknown-linux-musl-gcc -static",
+    },
+    no_match_error = _NO_MATCH,
+)
+
+_STAGE_BUILD_CXX = select(
+    {
+        "@platforms//cpu:aarch64": "aarch64-unknown-linux-musl-g++ -static",
+        "@platforms//cpu:x86_64": "x86_64-unknown-linux-musl-g++ -static",
+    },
+    no_match_error = _NO_MATCH,
+)
+
+_TOOL_SUBDIR = select(
+    {
+        "@platforms//cpu:aarch64": "aarch64-unknown-linux-musl",
+        "@platforms//cpu:x86_64": "x86_64-unknown-linux-musl",
+    },
+    no_match_error = _NO_MATCH,
+)
+
+_SEED_CC = [
+    "CC=gcc -static",
+    "CXX=g++ -static",
+]
+
+_OPT_FLAGS = [
+    "CFLAGS=-O2",
+    "CXXFLAGS=-O2",
+    # libtool intercepts a plain -static; --static reaches the driver.
+    "LDFLAGS=--static",
+]
+
+_BINUTILS_ARGS = [
+    "--disable-nls",
+    "--disable-werror",
+    "--disable-gdb",
+    "--disable-gdbserver",
+    "--disable-sim",
+    "--disable-gprofng",
+    "--disable-shared",
+    "--enable-static",
+    "--disable-dependency-tracking",
+]
+
+# Host GCC (both stages): a native-CPU cross to the musl triplet, sysroot
+# baked to its own output tree (valid in every sandbox, since actions all
+# run at /execroot/_main; also relocatable because the sysroot equals the
+# prefix). newlib/libgloss in the combined tree are ignored for a linux
+# target; isl is skipped.
+_HOST_GCC_ARGS = [
+    "--enable-languages=c,c++",
+    "--with-sysroot=%{OUT}",
+    "--with-native-system-header-dir=/include",
+    "--disable-shared",
+    "--disable-nls",
+    "--disable-multilib",
+    "--disable-bootstrap",
+    "--disable-libsanitizer",
+    "--disable-libssp",
+    "--disable-libgomp",
+    "--without-isl",
+    "--enable-checking=release",
+    "--disable-dependency-tracking",
+    "--disable-libstdcxx-pch",
+]
+
+# ---------------------------------------------------------------------------
+# Stage 0: GNU make, bootstrapped without any pre-existing make.
+# make is build tooling only — it never ends up in shipped artifacts — so
+# it is the one component the prebuilt seed keeps compiling.
+# ---------------------------------------------------------------------------
+
+make_bootstrap(
+    name = "make",
+    configure = "@make_src//:configure",
+    musl_gcc = ":musl_gcc",
+    musl_toolchain = ":musl_files",
+    srcs = "@make_src//:srcs",
+)
+
+# ---------------------------------------------------------------------------
+# Stage 1: host toolchain compiled by the PREBUILT musl.cc seed.
+# This is the only place the seed compiler is ever used (besides :make).
+# ---------------------------------------------------------------------------
+
+autotools_build(
+    name = "host-binutils-s1",
+    configure = "@binutils_src//:configure",
+    configure_args = _BINUTILS_ARGS + _SEED_CC + _OPT_FLAGS + _MUSL_TARGET,
+    make = ":make",
+    musl_gcc = ":musl_gcc",
+    musl_toolchain = ":musl_files",
+    srcs = "@binutils_src//:srcs",
+)
+
+autotools_build(
+    name = "musl-s1",
+    configure = "@musl_src//:configure",
+    configure_args = [
+        "--disable-shared",
+        "CC=gcc -static",
+        "CFLAGS=-O2",
+    ],
+    make = ":make",
+    musl_gcc = ":musl_gcc",
+    musl_toolchain = ":musl_files",
+    srcs = "@musl_src//:srcs",
+)
+
+autotools_build(
+    name = "host-gcc-s1",
+    configure = "@gcc_combined_src//:configure",
+    configure_args = _HOST_GCC_ARGS + _SEED_CC + _OPT_FLAGS + _MUSL_TARGET,
+    install_base = [
+        ":host-binutils-s1",
+        ":musl-s1",
+    ],
+    make = ":make",
+    musl_gcc = ":musl_gcc",
+    musl_toolchain = ":musl_files",
+    srcs = "@gcc_combined_src//:srcs",
+)
+
+# ---------------------------------------------------------------------------
+# Tooling rebuilt from source by stage 1: make and the GNU userland every
+# later action runs on. These builds still use the prebuilt seed busybox
+# as their shell (a shell cannot be built without a shell); from stage 2
+# onward, no action has any prebuilt binary among its inputs.
+#
+# -std=gnu17 throughout: several of these packages bundle gnulib
+# vintages with K&R declarations that GCC 15's C23 default rejects.
+# ---------------------------------------------------------------------------
+
+make_bootstrap(
+    name = "make-s2",
+    build_cc = select(
+        {
+            "@platforms//cpu:aarch64": "aarch64-unknown-linux-musl-gcc -static -std=gnu17",
+            "@platforms//cpu:x86_64": "x86_64-unknown-linux-musl-gcc -static -std=gnu17",
+        },
+        no_match_error = _NO_MATCH,
+    ),
+    build_cxx = _STAGE_BUILD_CXX,
+    configure = "@make_src//:configure",
+    path_trees = [":host-gcc-s1"],
+    srcs = "@make_src//:srcs",
+    tool_subdir = _TOOL_SUBDIR,
+)
+
+_USERLAND_ARGS = [
+    "--disable-nls",
+    "--disable-dependency-tracking",
+    "CFLAGS=-O2 -std=gnu17",
+    "LDFLAGS=--static",
+]
+
+[
+    autotools_build(
+        name = name + "-s2",
+        build_cc = _STAGE_BUILD_CC,
+        build_cxx = _STAGE_BUILD_CXX,
+        configure = "@" + name + "_src//:configure",
+        configure_args = _USERLAND_ARGS + extra + _STAGE_CC_ONLY,
+        make = ":make",
+        path_trees = [":host-gcc-s1"],
+        srcs = "@" + name + "_src//:srcs",
+        tool_subdir = _TOOL_SUBDIR,
+    )
+    for name, extra in [
+        # Internal malloc misbehaves on musl; Alpine disables it too.
+        ("bash", ["--without-bash-malloc"]),
+        ("coreutils", ["--enable-install-program=hostname"]),
+        ("sed", []),
+        ("grep", ["--disable-perl-regexp"]),
+        ("findutils", []),
+        ("diffutils", []),
+        ("tar", []),
+        ("gzip", []),
+        ("gawk", ["--without-readline", "--without-mpfr"]),
+    ]
+]
+
+# The complete from-source GNU userland: the shell and every utility the
+# autotools flows exec, in one merged prefix.
+tree_merge(
+    name = "userland-s2",
+    trees = [
+        ":bash-s2",
+        ":coreutils-s2",
+        ":sed-s2",
+        ":grep-s2",
+        ":findutils-s2",
+        ":diffutils-s2",
+        ":tar-s2",
+        ":gzip-s2",
+        ":gawk-s2",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# Stage 2: the same host toolchain rebuilt by stage 1, running on the
+# from-source GNU userland. No prebuilt binary is an input to these
+# actions — the seed toolchain and seed busybox are absent.
+# ---------------------------------------------------------------------------
+
+autotools_build(
+    name = "host-binutils-s2",
+    build_cc = _STAGE_BUILD_CC,
+    build_cxx = _STAGE_BUILD_CXX,
+    configure = "@binutils_src//:configure",
+    configure_args = _BINUTILS_ARGS + _OPT_FLAGS + _STAGE_CC + _MUSL_TARGET,
+    make = ":make-s2",
+    path_trees = [":host-gcc-s1"],
+    srcs = "@binutils_src//:srcs",
+    tool_subdir = _TOOL_SUBDIR,
+    userland = ":userland-s2",
+)
+
+autotools_build(
+    name = "musl-s2",
+    build_cc = _STAGE_BUILD_CC,
+    build_cxx = _STAGE_BUILD_CXX,
+    configure = "@musl_src//:configure",
+    configure_args = [
+        "--disable-shared",
+        "CFLAGS=-O2",
+    ] + _STAGE_CC_ONLY,
+    make = ":make-s2",
+    path_trees = [":host-gcc-s1"],
+    srcs = "@musl_src//:srcs",
+    tool_subdir = _TOOL_SUBDIR,
+    userland = ":userland-s2",
+)
+
+autotools_build(
+    name = "host-gcc-s2",
+    build_cc = _STAGE_BUILD_CC,
+    build_cxx = _STAGE_BUILD_CXX,
+    configure = "@gcc_combined_src//:configure",
+    configure_args = _HOST_GCC_ARGS + _OPT_FLAGS + _STAGE_CC + _MUSL_TARGET,
+    install_base = [
+        ":host-binutils-s2",
+        ":musl-s2",
+    ],
+    make = ":make-s2",
+    path_trees = [":host-gcc-s1"],
+    srcs = "@gcc_combined_src//:srcs",
+    tool_subdir = _TOOL_SUBDIR,
+    userland = ":userland-s2",
+)

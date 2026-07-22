@@ -1,0 +1,18 @@
+# GNU RISC-V bare-metal toolchain: GCC 15.2.0, binutils 2.45, newlib
+# 4.5.0, default architecture rv32imac/ilp32.
+#
+# Deliberately narrowed for build time: single multilib instead of the
+# usual ~40-entry list, C/C++ only (no Fortran), no bundled GDB.
+
+load("//toolchain:gcc.bzl", "gcc")
+
+package(default_visibility = ["//visibility:public"])
+
+gcc(
+    name = "riscv-none-elf-gcc",
+    gcc_args = [
+        "--with-arch=rv32imac",
+        "--with-abi=ilp32",
+    ],
+    target = "riscv-none-elf",
+)
