@@ -1,0 +1,20 @@
+# Windows-hosted GNU RISC-V bare-metal toolchain: the same GCC 15.2.0 /
+# binutils 2.45 / newlib 4.5.0 configuration as //tools/riscv-none-elf-gcc,
+# but host=x86_64-w64-mingw32 (a Canadian cross). Built entirely inside
+# the empty Linux sandbox; no build action ever runs on Windows. The
+# result is a relocatable tree of static .exe files that need only the
+# OS-provided DLLs (kernel32/UCRT) on the user's machine.
+
+load("//toolchain:gcc.bzl", "gcc_w64")
+
+package(default_visibility = ["//visibility:public"])
+
+gcc_w64(
+    name = "riscv-none-elf-gcc-w64",
+    gcc_args = [
+        "--with-arch=rv32imac",
+        "--with-abi=ilp32",
+    ],
+    target = "riscv-none-elf",
+    target_toolchain = "//tools/riscv-none-elf-gcc",
+)

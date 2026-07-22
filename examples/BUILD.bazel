@@ -1,3 +1,4 @@
+load("//toolchain:stage2.bzl", "stage2_hermetic_run")
 load(":riscv_binary.bzl", "cross_binary")
 
 # End-to-end examples: the same bare-metal sources cross-compiled by
@@ -70,4 +71,29 @@ cross_binary(
     out_ext = "exe",
     target_prefix = "x86_64-w64-mingw32",
     toolchain = "//tools/mingw-w64-gcc",
+)
+
+# macOS demo: the from-source clang + ld64.lld link an arm64 Mach-O
+# executable against the pruned Apple SDK (headers + .tbd text stubs) in
+# the same empty sandbox. It cannot run here — the structural check is
+# the Mach-O magic — but it runs on any Apple-Silicon Mac: ld64.lld
+# ad-hoc code-signs arm64 output.
+stage2_hermetic_run(
+    name = "hello-darwin",
+    files = {
+        "//toolchain:macos-sdk": "SDK",
+        ":compute.c": "COMPUTE_C",
+        ":hello.c": "HELLO_C",
+    },
+    out = "hello-darwin",
+    path_trees = ["//tools/clang"],
+    script = """clang -target arm64-apple-macos11 -isysroot %{SDK} -fuse-ld=lld \
+    -Os -Wall -o %{OUT} %{HELLO_C} %{COMPUTE_C}
+magic=$(od -An -tx1 -N4 %{OUT} | tr -d ' \\n')
+if [ "$magic" != "cffaedfe" ]; then
+    echo "not an arm64 Mach-O executable (magic: $magic)" >&2
+    exit 1
+fi
+""",
+    srcs = ["compute.h"],
 )

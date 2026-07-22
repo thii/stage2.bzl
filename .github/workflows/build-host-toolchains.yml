@@ -1,0 +1,208 @@
+name: Build host toolchains
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+# Queue multi-hour builds so a rerun resumes one cache lineage instead of
+# racing a concurrent writer for it.
+concurrency:
+  group: build-host-toolchains
+  cancel-in-progress: false
+
+jobs:
+  linux:
+    name: Linux (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 360
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Reclaim runner disk
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+
+      - name: Allow the hermetic Linux sandbox
+        run: |
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+      - name: Cache pinned source downloads
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/stage2-repository-cache
+          key: bazel-repositories-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'toolchain/gcc_combined_repo.bzl') }}
+          restore-keys: |
+            bazel-repositories-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.19.0
+
+      # Each action already invokes make -j4, so keep one Bazel action active.
+      - name: Build Linux toolchain
+        run: |
+          bazel build \
+            --jobs=1 \
+            --repository_cache="$RUNNER_TEMP/stage2-repository-cache" \
+            //tools/riscv-none-elf-gcc:dist
+
+      - name: Upload Linux toolchain
+        uses: actions/upload-artifact@v4
+        with:
+          name: riscv-none-elf-gcc-linux-${{ matrix.arch }}
+          path: bazel-bin/tools/riscv-none-elf-gcc/riscv-none-elf-gcc-15.2.0.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  windows:
+    name: Windows (x86_64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Reclaim runner disk
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+
+      - name: Allow the hermetic Linux sandbox
+        run: |
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+      - name: Cache pinned source downloads
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/stage2-repository-cache
+          key: bazel-repositories-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'toolchain/gcc_combined_repo.bzl') }}
+          restore-keys: |
+            bazel-repositories-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.19.0
+
+      - name: Build Windows toolchain and PE check
+        run: |
+          bazel build \
+            --jobs=1 \
+            --repository_cache="$RUNNER_TEMP/stage2-repository-cache" \
+            //tools/riscv-none-elf-gcc-w64:dist \
+            //tools/riscv-none-elf-gcc-w64:riscv-none-elf-gcc-w64-pe-check
+
+      - name: Upload Windows toolchain
+        uses: actions/upload-artifact@v4
+        with:
+          name: riscv-none-elf-gcc-windows-x86_64
+          path: bazel-bin/tools/riscv-none-elf-gcc-w64/riscv-none-elf-gcc-w64-15.2.0.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  darwin:
+    name: Darwin (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+            target: //tools/clang:clang-darwin-x86_64-dist
+            file: bazel-bin/tools/clang/clang-darwin-x86_64.tar.gz
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            target: //tools/clang:clang-darwin-arm64-dist
+            file: bazel-bin/tools/clang/clang-darwin-arm64.tar.gz
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 360
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Reclaim runner disk
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+
+      - name: Allow the hermetic Linux sandbox
+        run: |
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+      - name: Cache pinned source downloads
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/stage2-repository-cache
+          key: bazel-repositories-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'toolchain/gcc_combined_repo.bzl') }}
+          restore-keys: |
+            bazel-repositories-${{ runner.os }}-${{ runner.arch }}-
+
+      # A cold darwin chain (stage 2, then a native LLVM, then a Canadian
+      # LLVM) does not fit one 6-hour hosted job, so completed actions
+      # persist in a Bazel disk cache carried by the Actions cache and
+      # each run resumes where the last one stopped — re-run the workflow
+      # until the job goes green with an artifact. The run_id in the key
+      # forces a save every run; restore-keys picks the newest lineage.
+      # This does place SDK-derived trees in the repo-private Actions
+      # cache (10 GB, LRU-evicted), unlike the pinned-download cache
+      # policy on the other jobs.
+      - name: Cache Bazel results
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/stage2-disk-cache
+          key: bazel-disk-darwin-${{ matrix.arch }}-${{ github.run_id }}
+          restore-keys: |
+            bazel-disk-darwin-${{ matrix.arch }}-
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.19.0
+
+      # timeout(1) interrupts Bazel cleanly before the job deadline so
+      # the cache post-steps still run (a job-level timeout cancels
+      # them). Exit 124 — timed out, partial progress cached — is
+      # success for this step; a real build error still fails it.
+      - name: Build Darwin toolchain
+        run: |
+          timeout --signal=INT 320m bazel build \
+            --jobs=1 \
+            --repository_cache="$RUNNER_TEMP/stage2-repository-cache" \
+            --disk_cache="$RUNNER_TEMP/stage2-disk-cache" \
+            "${{ matrix.target }}" || [[ $? -eq 124 ]]
+
+      - name: Check whether the toolchain finished this run
+        id: outcome
+        run: |
+          if [[ -f "${{ matrix.file }}" ]]; then
+            echo "built=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "built=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Darwin ${{ matrix.arch }} did not finish within this run's budget; progress is cached — re-run the workflow to resume."
+          fi
+
+      - name: Upload Darwin toolchain
+        if: steps.outcome.outputs.built == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: clang-darwin-${{ matrix.arch }}
+          path: ${{ matrix.file }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7

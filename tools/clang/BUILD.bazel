@@ -1,0 +1,250 @@
+# clang + lld 22.1.8, linux-musl hosted, built from the pinned LLVM
+# source by stage 2 (cmake-s2 bootstrapped from source; python-s2 is the
+# build interpreter LLVM's cmake requires). clang is inherently
+# multi-target, and ld64.lld is a production Mach-O linker that ad-hoc
+# code-signs arm64 output, so this single package is also the darwin
+# "leg": it can compile and link for arm64-apple-macos against
+# //toolchain:macos-sdk with no Apple-built tool involved. The llvm-*
+# Mach-O binutils replacements (libtool-darwin, install-name-tool) come
+# along for toolchain assembly work.
+#
+# make (not ninja) drives the build; the -j1 retry absorbs the rare
+# OOM-killed link on small machines instead of failing the whole action.
+
+load("//toolchain:build_defs.bzl", "dist_tarball")
+load("//toolchain:stage2.bzl", "stage2_hermetic_run")
+
+package(default_visibility = ["//visibility:public"])
+
+stage2_hermetic_run(
+    name = "clang",
+    files = {
+        "//toolchain:python-s2": "PYTHON",
+        "@llvm_src//:llvm/CMakeLists.txt": "LLVM_CML",
+    },
+    out_tree = True,
+    path_trees = [
+        "//toolchain:host-gcc-s2",
+        "//toolchain:cmake-s2",
+        "//toolchain:python-s2",
+    ],
+    script = """llvmdir=$(dirname %{LLVM_CML})
+export CC="$CC_FOR_BUILD" CXX="$CXX_FOR_BUILD"
+cmake -S "$llvmdir" -B b \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=%{OUT} \
+    -DCMAKE_MAKE_PROGRAM=make \
+    '-DLLVM_ENABLE_PROJECTS=clang;lld' \
+    '-DLLVM_TARGETS_TO_BUILD=AArch64;ARM;RISCV;X86' \
+    -DCMAKE_EXE_LINKER_FLAGS=-static \
+    -DLLVM_ENABLE_ZLIB=OFF \
+    -DLLVM_ENABLE_ZSTD=OFF \
+    -DLLVM_ENABLE_LIBXML2=OFF \
+    -DLLVM_ENABLE_LIBEDIT=OFF \
+    -DLLVM_ENABLE_BINDINGS=OFF \
+    -DLLVM_INCLUDE_TESTS=OFF \
+    -DLLVM_INCLUDE_EXAMPLES=OFF \
+    -DLLVM_INCLUDE_BENCHMARKS=OFF \
+    -DLLVM_INCLUDE_DOCS=OFF \
+    -DCLANG_ENABLE_STATIC_ANALYZER=OFF \
+    -DPython3_EXECUTABLE=%{PYTHON}/bin/python3
+make -C b -j %{JOBS} clang lld llvm-ar llvm-nm llvm-objcopy llvm-strip \
+    llvm-libtool-darwin llvm-install-name-tool llvm-tblgen clang-tblgen || \
+    make -C b -j 1 clang lld llvm-ar llvm-nm llvm-objcopy llvm-strip \
+        llvm-libtool-darwin llvm-install-name-tool llvm-tblgen clang-tblgen
+make -C b install-clang install-clang-resource-headers install-lld \
+    install-llvm-ar install-llvm-ranlib install-llvm-nm install-llvm-strip \
+    install-llvm-objcopy install-llvm-libtool-darwin \
+    install-llvm-install-name-tool
+install -m 0755 b/bin/llvm-tblgen b/bin/clang-tblgen %{OUT}/bin/
+""",
+    srcs = ["@llvm_src//:srcs"],
+)
+
+# arm64-Darwin-hosted clang + lld, Canadian-crossed entirely inside the
+# Linux sandbox. :clang is both the build->host compiler/tool suite and
+# the source of native TableGen executables; none of the Mach-O outputs is
+# executed while the tree is being built.
+stage2_hermetic_run(
+    name = "clang-darwin-arm64",
+    files = {
+        ":clang": "HOST_LLVM",
+        "//toolchain:macos-sdk": "SDK",
+        "//toolchain:python-s2": "PYTHON",
+        "@llvm_src//:llvm/CMakeLists.txt": "LLVM_CML",
+    },
+    out_tree = True,
+    path_trees = [
+        ":clang",
+        "//toolchain:cmake-s2",
+        "//toolchain:python-s2",
+    ],
+    script = """llvmdir=$(dirname %{LLVM_CML})
+hostllvm=%{HOST_LLVM}
+sdk=%{SDK}
+export PATH="$hostllvm/bin:$PATH"
+cmake -S "$llvmdir" -B b \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=%{OUT} \
+    -DCMAKE_MAKE_PROGRAM=make \
+    -DCMAKE_SYSTEM_NAME=Darwin \
+    -DCMAKE_SYSTEM_VERSION=11.0 \
+    -DCMAKE_SYSTEM_PROCESSOR=arm64 \
+    -DCMAKE_OSX_ARCHITECTURES=arm64 \
+    -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
+    -DCMAKE_OSX_SYSROOT="$sdk" \
+    -DCMAKE_FIND_ROOT_PATH="$sdk" \
+    -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
+    -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
+    -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
+    -DCMAKE_C_COMPILER="$hostllvm/bin/clang" \
+    -DCMAKE_CXX_COMPILER="$hostllvm/bin/clang++" \
+    -DCMAKE_C_COMPILER_TARGET=arm64-apple-macos11 \
+    -DCMAKE_CXX_COMPILER_TARGET=arm64-apple-macos11 \
+    -DCMAKE_AR="$hostllvm/bin/llvm-ar" \
+    -DCMAKE_RANLIB="$hostllvm/bin/llvm-ranlib" \
+    -DCMAKE_NM="$hostllvm/bin/llvm-nm" \
+    -DCMAKE_OBJCOPY="$hostllvm/bin/llvm-objcopy" \
+    -DCMAKE_STRIP="$hostllvm/bin/llvm-strip" \
+    -DCMAKE_LINKER="$hostllvm/bin/ld64.lld" \
+    -DCMAKE_LIBTOOL="$hostllvm/bin/llvm-libtool-darwin" \
+    -DCMAKE_INSTALL_NAME_TOOL="$hostllvm/bin/llvm-install-name-tool" \
+    -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld \
+    -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld \
+    -DCMAKE_MODULE_LINKER_FLAGS=-fuse-ld=lld \
+    -DCMAKE_SKIP_RPATH=ON \
+    '-DLLVM_ENABLE_PROJECTS=clang;lld' \
+    '-DLLVM_TARGETS_TO_BUILD=AArch64;ARM;RISCV;X86' \
+    -DLLVM_HOST_TRIPLE=arm64-apple-macos11 \
+    -DLLVM_DEFAULT_TARGET_TRIPLE=arm64-apple-macos11 \
+    -DLLVM_TABLEGEN="$hostllvm/bin/llvm-tblgen" \
+    -DCLANG_TABLEGEN="$hostllvm/bin/clang-tblgen" \
+    -DLLVM_ENABLE_ZLIB=OFF \
+    -DLLVM_ENABLE_ZSTD=OFF \
+    -DLLVM_ENABLE_LIBXML2=OFF \
+    -DLLVM_ENABLE_LIBEDIT=OFF \
+    -DLLVM_ENABLE_TERMINFO=OFF \
+    -DLLVM_ENABLE_BINDINGS=OFF \
+    -DLLVM_INCLUDE_TESTS=OFF \
+    -DLLVM_INCLUDE_EXAMPLES=OFF \
+    -DLLVM_INCLUDE_BENCHMARKS=OFF \
+    -DLLVM_INCLUDE_DOCS=OFF \
+    -DCLANG_ENABLE_STATIC_ANALYZER=OFF \
+    -DPython3_EXECUTABLE=%{PYTHON}/bin/python3
+make -C b -j %{JOBS} clang lld llvm-ar llvm-nm llvm-objcopy llvm-strip \
+    llvm-libtool-darwin llvm-install-name-tool || \
+    make -C b -j 1 clang lld llvm-ar llvm-nm llvm-objcopy llvm-strip \
+        llvm-libtool-darwin llvm-install-name-tool
+make -C b install-clang install-clang-resource-headers install-lld \
+    install-llvm-ar install-llvm-ranlib install-llvm-nm install-llvm-strip \
+    install-llvm-objcopy install-llvm-libtool-darwin \
+    install-llvm-install-name-tool
+magic=$(od -An -tx1 -N4 %{OUT}/bin/clang | tr -d ' \\n')
+if [ "$magic" != "cffaedfe" ]; then
+    echo "installed clang is not an arm64 Mach-O executable (magic: $magic)" >&2
+    exit 1
+fi
+""",
+    srcs = ["@llvm_src//:srcs"],
+)
+
+dist_tarball(
+    name = "clang-darwin-arm64-dist",
+    out = "clang-darwin-arm64.tar.gz",
+    tree = ":clang-darwin-arm64",
+    userland = "//toolchain:userland-s2",
+)
+
+# x86_64-Darwin-hosted clang + lld, Canadian-crossed entirely inside the
+# Linux sandbox. :clang is both the build->host compiler/tool suite and
+# the source of native TableGen executables; none of the Mach-O outputs is
+# executed while the tree is being built.
+stage2_hermetic_run(
+    name = "clang-darwin-x86_64",
+    files = {
+        ":clang": "HOST_LLVM",
+        "//toolchain:macos-sdk": "SDK",
+        "//toolchain:python-s2": "PYTHON",
+        "@llvm_src//:llvm/CMakeLists.txt": "LLVM_CML",
+    },
+    out_tree = True,
+    path_trees = [
+        ":clang",
+        "//toolchain:cmake-s2",
+        "//toolchain:python-s2",
+    ],
+    script = """llvmdir=$(dirname %{LLVM_CML})
+hostllvm=%{HOST_LLVM}
+sdk=%{SDK}
+export PATH="$hostllvm/bin:$PATH"
+cmake -S "$llvmdir" -B b \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=%{OUT} \
+    -DCMAKE_MAKE_PROGRAM=make \
+    -DCMAKE_SYSTEM_NAME=Darwin \
+    -DCMAKE_SYSTEM_VERSION=11.0 \
+    -DCMAKE_SYSTEM_PROCESSOR=x86_64 \
+    -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+    -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
+    -DCMAKE_OSX_SYSROOT="$sdk" \
+    -DCMAKE_FIND_ROOT_PATH="$sdk" \
+    -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
+    -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
+    -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
+    -DCMAKE_C_COMPILER="$hostllvm/bin/clang" \
+    -DCMAKE_CXX_COMPILER="$hostllvm/bin/clang++" \
+    -DCMAKE_C_COMPILER_TARGET=x86_64-apple-macos11 \
+    -DCMAKE_CXX_COMPILER_TARGET=x86_64-apple-macos11 \
+    -DCMAKE_AR="$hostllvm/bin/llvm-ar" \
+    -DCMAKE_RANLIB="$hostllvm/bin/llvm-ranlib" \
+    -DCMAKE_NM="$hostllvm/bin/llvm-nm" \
+    -DCMAKE_OBJCOPY="$hostllvm/bin/llvm-objcopy" \
+    -DCMAKE_STRIP="$hostllvm/bin/llvm-strip" \
+    -DCMAKE_LINKER="$hostllvm/bin/ld64.lld" \
+    -DCMAKE_LIBTOOL="$hostllvm/bin/llvm-libtool-darwin" \
+    -DCMAKE_INSTALL_NAME_TOOL="$hostllvm/bin/llvm-install-name-tool" \
+    -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld \
+    -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld \
+    -DCMAKE_MODULE_LINKER_FLAGS=-fuse-ld=lld \
+    -DCMAKE_SKIP_RPATH=ON \
+    '-DLLVM_ENABLE_PROJECTS=clang;lld' \
+    '-DLLVM_TARGETS_TO_BUILD=AArch64;ARM;RISCV;X86' \
+    -DLLVM_HOST_TRIPLE=x86_64-apple-macos11 \
+    -DLLVM_DEFAULT_TARGET_TRIPLE=x86_64-apple-macos11 \
+    -DLLVM_TABLEGEN="$hostllvm/bin/llvm-tblgen" \
+    -DCLANG_TABLEGEN="$hostllvm/bin/clang-tblgen" \
+    -DLLVM_ENABLE_ZLIB=OFF \
+    -DLLVM_ENABLE_ZSTD=OFF \
+    -DLLVM_ENABLE_LIBXML2=OFF \
+    -DLLVM_ENABLE_LIBEDIT=OFF \
+    -DLLVM_ENABLE_TERMINFO=OFF \
+    -DLLVM_ENABLE_BINDINGS=OFF \
+    -DLLVM_INCLUDE_TESTS=OFF \
+    -DLLVM_INCLUDE_EXAMPLES=OFF \
+    -DLLVM_INCLUDE_BENCHMARKS=OFF \
+    -DLLVM_INCLUDE_DOCS=OFF \
+    -DCLANG_ENABLE_STATIC_ANALYZER=OFF \
+    -DPython3_EXECUTABLE=%{PYTHON}/bin/python3
+make -C b -j %{JOBS} clang lld llvm-ar llvm-nm llvm-objcopy llvm-strip \
+    llvm-libtool-darwin llvm-install-name-tool || \
+    make -C b -j 1 clang lld llvm-ar llvm-nm llvm-objcopy llvm-strip \
+        llvm-libtool-darwin llvm-install-name-tool
+make -C b install-clang install-clang-resource-headers install-lld \
+    install-llvm-ar install-llvm-ranlib install-llvm-nm install-llvm-strip \
+    install-llvm-objcopy install-llvm-libtool-darwin \
+    install-llvm-install-name-tool
+header=$(od -An -tx1 -N8 %{OUT}/bin/clang | tr -d ' \n')
+if [ "$header" != "cffaedfe07000001" ]; then
+    echo "installed clang is not an x86_64 Mach-O executable (header: $header)" >&2
+    exit 1
+fi
+""",
+    srcs = ["@llvm_src//:srcs"],
+)
+
+dist_tarball(
+    name = "clang-darwin-x86_64-dist",
+    out = "clang-darwin-x86_64.tar.gz",
+    tree = ":clang-darwin-x86_64",
+    userland = "//toolchain:userland-s2",
+)
