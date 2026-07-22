@@ -46,26 +46,26 @@ def gcc(name, target, gcc_args = [], gcc_version = "15.2.0"):
     """
     stage2_autotools_build(
         name = name + "-binutils",
-        configure = "@binutils_src//:configure",
+        configure = Label("@binutils_src//:configure"),
         configure_args = ["--target=" + target] + BINUTILS_ARGS + OPT_FLAGS + STAGE_CC,
-        path_trees = ["//toolchain:host-gcc-s2"],
-        srcs = "@binutils_src//:srcs",
+        path_trees = [Label("//toolchain:host-gcc-s2")],
+        srcs = Label("@binutils_src//:srcs"),
     )
 
     stage2_autotools_build(
         name = name,
-        configure = "@gcc_combined_src//:configure",
+        configure = Label("@gcc_combined_src//:configure"),
         configure_args = ["--target=" + target] + GCC_NEWLIB_ARGS + gcc_args + OPT_FLAGS + STAGE_CC,
         install_base = [":" + name + "-binutils"],
-        path_trees = ["//toolchain:host-gcc-s2"],
-        srcs = "@gcc_combined_src//:srcs",
+        path_trees = [Label("//toolchain:host-gcc-s2")],
+        srcs = Label("@gcc_combined_src//:srcs"),
     )
 
     dist_tarball(
         name = "dist",
         out = name + "-" + gcc_version + ".tar.gz",
         tree = ":" + name,
-        userland = "//toolchain:userland-s2",
+        userland = Label("//toolchain:userland-s2"),
     )
 
 _W64_HOST = "x86_64-w64-mingw32"
@@ -92,27 +92,27 @@ def gcc_w64(name, target, target_toolchain, gcc_args = [], gcc_version = "15.2.0
 
     stage2_autotools_build(
         name = name + "-binutils",
-        configure = "@binutils_src//:configure",
+        configure = Label("@binutils_src//:configure"),
         configure_args = canadian_args + BINUTILS_ARGS + W64_OPT_FLAGS + MINGW_HOST_CC,
         path_trees = [
-            "//toolchain:host-gcc-s2",
-            "//tools/mingw-w64-gcc",
+            Label("//toolchain:host-gcc-s2"),
+            Label("//tools/mingw-w64-gcc"),
         ],
-        srcs = "@binutils_src//:srcs",
+        srcs = Label("@binutils_src//:srcs"),
     )
 
     stage2_autotools_build(
         name = name,
-        configure = "@gcc_combined_src//:configure",
+        configure = Label("@gcc_combined_src//:configure"),
         configure_args = canadian_args + GCC_NEWLIB_ARGS + gcc_args +
                          W64_OPT_FLAGS + MINGW_HOST_CC,
         install_base = [":" + name + "-binutils"],
         path_trees = [
-            "//toolchain:host-gcc-s2",
-            "//tools/mingw-w64-gcc",
+            Label("//toolchain:host-gcc-s2"),
+            Label("//tools/mingw-w64-gcc"),
             target_toolchain,
         ],
-        srcs = "@gcc_combined_src//:srcs",
+        srcs = Label("@gcc_combined_src//:srcs"),
     )
 
     # Windows binaries cannot execute in the sandbox, so the end-to-end
@@ -156,5 +156,5 @@ echo "$count PE32+ x86_64 executables verified (MZ + PE signature + machine) in 
         name = "dist",
         out = name + "-" + gcc_version + ".tar.gz",
         tree = ":" + name,
-        userland = "//toolchain:userland-s2",
+        userland = Label("//toolchain:userland-s2"),
     )

@@ -104,12 +104,15 @@ BINUTILS_ARGS = [
     "--disable-dependency-tracking",
 ]
 
+# Label() (not plain strings) so the references bind to THIS module:
+# macro-supplied label strings resolve relative to the calling package,
+# which for a dependent module would be the wrong repository.
 STAGE2_KWARGS = dict(
     build_cc = STAGE_BUILD_CC,
     build_cxx = STAGE_BUILD_CXX,
-    make = "//toolchain:make-s2",
+    make = Label("//toolchain:make-s2"),
     tool_subdir = TOOL_SUBDIR,
-    userland = "//toolchain:userland-s2",
+    userland = Label("//toolchain:userland-s2"),
 )
 
 def stage2_autotools_build(**kwargs):

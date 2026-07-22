@@ -283,6 +283,71 @@ Deliberately narrowed, for build time — each is a switch in the
 - no GDB (a separate source package that would roughly double the
   build).
 
+## Using the rules from your own module
+
+The rules layer is general: `stage2_autotools_build` runs any
+configure/make tree — and `stage2_hermetic_run` any script — on the
+zero-prebuilt stage-2 platform. The from-source userland shell, the
+static musl GCC, and GNU make arrive as ordinary Bazel inputs from this
+module, so artifacts you build inherit the same "no prebuilt binary
+among action inputs" property. In your `MODULE.bazel`:
+
+```starlark
+bazel_dep(name = "stage2.bzl", version = "0.1.0")
+bazel_dep(name = "platforms", version = "1.1.0")
+```
+
+Copy the sandbox flags into your `.bazelrc` — the hermetic sandbox is a
+per-workspace setting that does not propagate from dependencies. Every
+action's preamble refuses to run outside the empty sandbox (the
+`/bin/sh` tripwire), so forgetting this fails loudly instead of quietly
+building against your host:
+
+```
+common --enable_platform_specific_config
+build --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
+build:linux --experimental_use_hermetic_linux_sandbox
+build:linux --spawn_strategy=linux-sandbox
+build:linux --sandbox_default_allow_network=false
+```
+
+Then a package builds like this (GNU hello, static, from source):
+
+```starlark
+load(
+    "@stage2.bzl//toolchain:stage2.bzl",
+    "STAGE_CC",
+    "stage2_autotools_build",
+    "stage2_hermetic_run",
+)
+
+stage2_autotools_build(
+    name = "hello",
+    configure = "@hello_src//:configure",
+    configure_args = [
+        "--disable-nls",
+        "--disable-dependency-tracking",
+        "CFLAGS=-O2 -std=gnu17",
+        "LDFLAGS=--static",
+    ] + STAGE_CC,
+    path_trees = ["@stage2.bzl//toolchain:host-gcc-s2"],
+    srcs = "@hello_src//:srcs",
+)
+
+# The built artifact runs inside the same empty sandbox: static
+# binaries need nothing from a host.
+stage2_hermetic_run(
+    name = "hello-output",
+    files = {":hello": "TREE"},
+    script = "%{TREE}/bin/hello > %{OUT}\n",
+)
+```
+
+`STAGE_CC` pins the stage-2 compiler (static) as configure's `CC`/`CXX`
+and `path_trees` puts its `bin/` on `PATH`. The first build bootstraps
+the platform once (~40 min on a small machine); afterwards it is an
+ordinary cached Bazel dependency.
+
 ## Host requirements
 
 - Linux with user namespaces available (the hermetic sandbox is
