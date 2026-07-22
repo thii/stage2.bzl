@@ -1,0 +1,73 @@
+load(":riscv_binary.bzl", "cross_binary")
+
+# End-to-end examples: the same bare-metal sources cross-compiled by
+# each toolchain that //tools just built from source. The riscv flags
+# spell out the target (redundantly: the compiler was configured with
+# --with-arch=rv32imac --with-abi=ilp32); the others use their configured
+# defaults. The mingw demo links a real PE32+ executable against the
+# UCRT-based mingw-w64 runtime.
+
+_BAREMETAL_COPTS = [
+    "-Os",
+    "-g",
+    "-Wall",
+    "-ffunction-sections",
+    "-fdata-sections",
+    "-specs=nosys.specs",
+    "-Wl,--gc-sections",
+]
+
+cross_binary(
+    name = "hello",
+    srcs = [
+        "compute.c",
+        "hello.c",
+    ],
+    copts = [
+        "-march=rv32imac",
+        "-mabi=ilp32",
+    ] + _BAREMETAL_COPTS,
+    hdrs = ["compute.h"],
+    target_prefix = "riscv-none-elf",
+    toolchain = "//tools/riscv-none-elf-gcc",
+)
+
+cross_binary(
+    name = "hello-aarch64",
+    srcs = [
+        "compute.c",
+        "hello.c",
+    ],
+    copts = _BAREMETAL_COPTS,
+    hdrs = ["compute.h"],
+    target_prefix = "aarch64-none-elf",
+    toolchain = "//tools/aarch64-none-elf-gcc",
+)
+
+cross_binary(
+    name = "hello-arm",
+    srcs = [
+        "compute.c",
+        "hello.c",
+    ],
+    copts = _BAREMETAL_COPTS,
+    hdrs = ["compute.h"],
+    target_prefix = "arm-none-eabi",
+    toolchain = "//tools/arm-none-eabi-gcc",
+)
+
+cross_binary(
+    name = "hello-w64",
+    srcs = [
+        "compute.c",
+        "hello.c",
+    ],
+    copts = [
+        "-Os",
+        "-Wall",
+    ],
+    hdrs = ["compute.h"],
+    out_ext = "exe",
+    target_prefix = "x86_64-w64-mingw32",
+    toolchain = "//tools/mingw-w64-gcc",
+)

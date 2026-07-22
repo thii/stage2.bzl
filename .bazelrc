@@ -1,0 +1,22 @@
+# Never autodetect a host C++ toolchain; this workspace compiles everything
+# with its own hermetically downloaded static musl GCC.
+build --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
+
+# ---------------------------------------------------------------------------
+# The point of this repro: build inside Bazel's hermetic Linux sandbox.
+#
+# The sandbox root is completely empty except for declared action inputs.
+# Deliberately NO --sandbox_add_mount_pair: nothing is mounted from the host.
+# Instead, fetch time downloads already-static binaries (musl.cc native GCC,
+# busybox-static), and each action's preamble builds its own userland inside
+# the sandbox: a busybox applet symlink farm on PATH, /bin/sh -> busybox,
+# and a pinned hermetic environment (see _PREAMBLE in
+# toolchain/build_defs.bzl).
+# ---------------------------------------------------------------------------
+common --enable_platform_specific_config
+build:linux --experimental_use_hermetic_linux_sandbox
+# Fail loudly if linux-sandbox is unavailable instead of silently falling
+# back to a weaker sandbox strategy.
+build:linux --spawn_strategy=linux-sandbox
+# Actions get no network either (fresh netns, loopback only).
+build:linux --sandbox_default_allow_network=false

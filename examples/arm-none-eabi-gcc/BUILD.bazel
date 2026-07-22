@@ -1,0 +1,12 @@
+# GNU Arm bare-metal toolchain: GCC 15.2.0 + binutils 2.45 + newlib
+# 4.5.0. Single (default) multilib — Arm's own distribution builds the
+# rmprofile/aprofile multilib lists; widen via gcc_args if needed.
+
+load("//toolchain:gcc.bzl", "gcc")
+
+package(default_visibility = ["//visibility:public"])
+
+gcc(
+    name = "arm-none-eabi-gcc",
+    target = "arm-none-eabi",
+)
