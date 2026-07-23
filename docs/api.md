@@ -1,9 +1,9 @@
 # API reference
 
-Load supported symbols from `defs.bzl`:
+Load supported symbols from the repository entry point:
 
 ```starlark
-load("@stage2.bzl//:defs.bzl", "stage2_run")
+load("@stage2.bzl", "stage2_run")
 ```
 
 Only the parameters documented here are supported. Targets under `//internal`
@@ -285,7 +285,7 @@ The `@stage2.bzl//trees` package provides:
 | `:clang` | Clang 22.1.8 compiler, tools, and resource headers; no sysroot or runtime |
 | `:macos-sdk` | Pruned macOS headers, text `.tbd` stubs, and non-executable SDK metadata |
 
-The documented exports of `defs.bzl`, the parameters above, and these tree
+The documented exports of `stage2.bzl`, the parameters above, and these tree
 labels are the public API. Other repository targets, scripts, logs, and example
 implementation details may change without notice.
 

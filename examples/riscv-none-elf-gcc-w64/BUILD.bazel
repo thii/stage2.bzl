@@ -6,7 +6,7 @@
 # result is a relocatable tree of static .exe files that need only the
 # OS-provided DLLs (kernel32/UCRT) on the user's machine.
 
-load("//:defs.bzl", "stage2_gcc_w64")
+load("@stage2.bzl", "stage2_gcc_w64")
 
 package(default_visibility = ["//examples:__subpackages__"])
 

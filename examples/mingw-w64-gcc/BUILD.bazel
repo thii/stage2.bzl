@@ -9,7 +9,7 @@
 # no std::thread in libstdc++), C/C++ only, no multilib.
 
 load(
-    "//:defs.bzl",
+    "@stage2.bzl",
     "BINUTILS_ARGS",
     "OPT_FLAGS",
     "stage2_autotools_build",

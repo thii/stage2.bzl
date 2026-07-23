@@ -2,7 +2,7 @@
 # reusable Linux-native //trees:clang and the pruned
 # //trees:macos-sdk. No Mach-O output executes during these builds.
 
-load("//:defs.bzl", "stage2_dist_tarball", "stage2_run")
+load("@stage2.bzl", "stage2_dist_tarball", "stage2_run")
 
 package(default_visibility = ["//examples:__subpackages__"])
 

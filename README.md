@@ -63,7 +63,7 @@ build it with the public compiler tree:
 
 ```starlark
 # BUILD.bazel
-load("@stage2.bzl//:defs.bzl", "stage2_run")
+load("@stage2.bzl", "stage2_run")
 
 stage2_run(
     name = "hello",
@@ -83,11 +83,11 @@ bazel build //:hello
 
 ## Rules and trees
 
-Load supported symbols from `@stage2.bzl//:defs.bzl`. For an Autotools
+Load supported symbols from `@stage2.bzl`. For an Autotools
 package, expose a pinned source tree and its configure script:
 
 ```starlark
-load("@stage2.bzl//:defs.bzl", "stage2_autotools_build")
+load("@stage2.bzl", "stage2_autotools_build")
 
 stage2_autotools_build(
     name = "package",
@@ -112,7 +112,7 @@ tar, gzip, gawk, and GNU make. The supported minimal composition is Bash plus
 coreutils:
 
 ```starlark
-load("@stage2.bzl//:defs.bzl", "stage2_tree_merge")
+load("@stage2.bzl", "stage2_tree_merge")
 
 stage2_tree_merge(
     name = "minimal-userland",

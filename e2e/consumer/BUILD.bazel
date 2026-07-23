@@ -1,5 +1,5 @@
 load(
-    "@stage2.bzl//:defs.bzl",
+    "@stage2.bzl",
     "stage2_autotools_build",
     "stage2_run",
 )
