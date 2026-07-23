@@ -1,402 +1,141 @@
 # stage2.bzl
 
-stage2.bzl is a Bazel rules library for building software from source
-inside an empty Linux sandbox. Use it to build an Autotools package, run
-an arbitrary scripted build, compose a custom build userland, or produce
-embedded GCC toolchains without relying on a preinstalled compiler or
-shell.
+stage2.bzl is a Bazel rules library for building software from source in
+an empty Linux sandbox. It provides a source-built compiler, shell,
+userland, and common build tools.
 
-The name marks the trust boundary: from **stage 2** of the bootstrap
-onward, no action has a prebuilt binary among its declared inputs.
-Compiler, libc, binutils, Bash, GNU userland, make, and awk are
-source-built Bazel outputs. The sandbox exposes no host `/usr`, `/lib`,
-or `/bin/sh`, and actions have no network. The two bootstrap seeds and
-other exact limits are documented in [Trust and verification](docs/trust.md).
+From stage 2 onward, library-owned actions use no downloaded executable
+as build machinery. The full bootstrap is not seedless: a musl.cc GCC
+and Alpine BusyBox are used below that boundary. See
+[Trust and verification](docs/trust.md) for the precise claim.
 
-Builds execute only on Linux `x86_64` or `aarch64`, with user namespaces
-and Bazel 9 or newer. The first build bootstraps the build environment in roughly
-25–40 minutes on a small machine; later builds are cached, and a shared
-disk cache can reuse that work across workspaces.
+## Requirements
+
+- Linux `x86_64` or `aarch64`
+- Bazel 9 or newer
+- Linux user namespaces
+- Network access while Bazel fetches pinned inputs
+
+With the required sandbox settings, build actions have no network and
+cannot see host `/usr`, `/lib`, or `/bin/sh`. Remote execution is not
+supported.
 
 ## Quickstart
 
-Public-registry publication is deferred. Until then, select 1.0.0 with a
-pinned Git or archive override:
+The module is not yet in a public registry, so pin the repository:
 
 ```starlark
 # MODULE.bazel
 bazel_dep(name = "stage2.bzl", version = "1.0.0")
 bazel_dep(name = "platforms", version = "1.1.0")
-git_override(module_name = "stage2.bzl", commit = "<full commit SHA>", remote = "https://github.com/thii/stage2.bzl.git")
 
-http_archive = use_repo_rule(
-    "@bazel_tools//tools/build_defs/repo:http.bzl",
-    "http_archive",
-)
-
-http_archive(
-    name = "hello_src",
-    build_file_content = """
-package(default_visibility = ["//visibility:public"])
-
-filegroup(
-    name = "srcs",
-    srcs = glob(["**"]),
-)
-
-exports_files(["configure"])
-""",
-    sha256 = "8d99142afd92576f30b0cd7cb42a8dc6809998bc5d607d88761f512e26c7db20",
-    strip_prefix = "hello-2.12.1",
-    urls = ["https://mirrors.kernel.org/gnu/hello/hello-2.12.1.tar.gz"],
+git_override(
+    module_name = "stage2.bzl",
+    commit = "<full commit SHA>",
+    remote = "https://github.com/thii/stage2.bzl.git",
 )
 ```
 
-The consumer workspace must copy the sandbox contract into `.bazelrc`;
-dependency settings do not propagate:
+Dependency settings do not propagate. Add the required sandbox contract
+to the consuming workspace:
 
 ```text
+# .bazelrc
 common --enable_platform_specific_config
 build:linux --experimental_use_hermetic_linux_sandbox
 build:linux --spawn_strategy=linux-sandbox
 build:linux --sandbox_default_allow_network=false
 ```
 
-The common package case needs only the public root load:
+Given a local `hello.c`:
+
+```c
+#include <stdio.h>
+
+int main(void) {
+    puts("hello");
+    return 0;
+}
+```
+
+build it with the public compiler tree:
 
 ```starlark
 # BUILD.bazel
-load("@stage2.bzl//:defs.bzl", "stage2_autotools_build")
+load("@stage2.bzl//:defs.bzl", "stage2_run")
 
-stage2_autotools_build(
+stage2_run(
     name = "hello",
-    configure = "@hello_src//:configure",
-    configure_args = ["--disable-nls", "CFLAGS=-O2 -std=gnu17", "LDFLAGS=--static"],
-    srcs = "@hello_src//:srcs",
+    inputs = {"SRC": ":hello.c"},
+    path_trees = ["@stage2.bzl//trees:cc"],
+    script = "$CC_FOR_BUILD -O2 -static %{SRC} -o %{OUT}\n",
 )
 ```
 
 ```sh
 bazel build //:hello
+./bazel-bin/hello
 ```
 
-`stage2_autotools_build` supplies the stage-2 compiler and default GNU
-userland. The other stable exports live in the same `defs.bzl`; source
-repositories use Bazel's native repository rules, and tool inputs use
-public `@stage2.bzl//trees:*` labels. See the
-[consumer guide](docs/consumers.md) for a complete runnable example,
-caching, mixed-workspace settings, and troubleshooting, and the
-[API reference](docs/api.md) for every export.
+`stage2_run` supplies the default GNU userland but adds no compiler
+automatically. `stage2_autotools_build` adds the compiler as well. See
+the [consumer guide](docs/consumers.md) for an Autotools example,
+custom userlands, caching, and troubleshooting.
 
-## Toolchain examples
+## Public API
 
-The in-repository examples dogfood the same public API by building
-from-source counterparts of common prebuilt toolchain distributions.
-They demonstrate the rules; they are not supported products:
+Load supported symbols from `@stage2.bzl//:defs.bzl`. Its build macros
+are:
 
-| tool | components | notes |
-|------|------------|-------|
-| `//examples/riscv-none-elf-gcc` | GCC 15.2.0, binutils 2.45, newlib 4.5.0 | default arch `rv32imac/ilp32` |
-| `//examples/aarch64-none-elf-gcc` | GCC 15.2.0, binutils 2.45, newlib 4.5.0 | AArch64 bare-metal |
-| `//examples/arm-none-eabi-gcc` | GCC 15.2.0, binutils 2.45, newlib 4.5.0 | Arm 32-bit bare-metal |
-| `//examples/mingw-w64-gcc` | GCC 15.2.0, binutils 2.45, mingw-w64 v12 (UCRT) | Windows x86_64 cross; `--enable-threads=win32` |
-| `//examples/riscv-none-elf-gcc-w64` | same as riscv-none-elf-gcc | **Windows-hosted** (Canadian cross, see below) |
-| `//examples/clang` | LLVM/clang + lld 22.1.8 | Darwin-hosted arm64/x86_64 Canadian crosses using `//trees:clang` |
+| export | purpose |
+|---|---|
+| `stage2_autotools_build` | Run `configure`, `make`, and `make install`. |
+| `stage2_run` | Run an arbitrary Bash build script. |
+| `stage2_tree_merge` | Merge directory trees; later trees win. |
+| `stage2_dist_tarball` | Create a timestamp-normalized, name-sorted `.tar.gz`. |
+| `stage2_gcc` | Build a Linux-hosted GCC/newlib cross toolchain. |
+| `stage2_gcc_w64` | Build a Windows-hosted GCC Canadian cross. |
 
-Each GCC package provides `<name>` (the merged install tree) and `:dist`
-(a reproducible `.tar.gz`). The Clang package instead provides the
-`clang-darwin-arm64` and `clang-darwin-x86_64` trees and matching
-`-dist` targets. The newlib toolchains are three-line `stage2_gcc(...)`
-calls; mingw spells out the classic headers → C-only GCC → CRT → full
-GCC sequence with `stage2_autotools_build`.
-They deliberately build a single multilib, C/C++ only, with no bundled
-GDB; mingw also omits winpthreads.
+Reusable filesystem trees are public under `@stage2.bzl//trees`:
 
-The reusable `//trees:clang` tree is Linux-native Clang/LLD 22.1.8,
-built as `//internal:host-clang-s2`. Put it in `path_trees`, or merge
-it after `//trees:default_userland` to make Clang part of a custom userland.
+- `:cc` and `:default_userland`
+- `:bash`, `:coreutils`, `:sed`, `:grep`, `:findutils`, `:diffutils`,
+  `:tar`, `:gzip`, `:gawk`, and `:make`
+- `:bsdtar`, `:cmake`, `:python`, `:clang`, and `:macos-sdk`
+
+The supported minimal userland is Bash plus coreutils. Public components
+and audited trees can be combined with `stage2_tree_merge`; adding a
+foreign prebuilt executable changes the provenance claim.
+
+The [API reference](docs/api.md) also documents the exported build
+constants. Everything under `//internal` is private.
+
+## Examples
+
+The `//examples` packages demonstrate the public API; they are not
+supported toolchain distributions.
+
+| package | result |
+|---|---|
+| `//examples/riscv-none-elf-gcc` | RISC-V bare-metal GCC/newlib |
+| `//examples/aarch64-none-elf-gcc` | AArch64 bare-metal GCC/newlib |
+| `//examples/arm-none-eabi-gcc` | Arm bare-metal GCC/newlib |
+| `//examples/mingw-w64-gcc` | Linux-to-Windows GCC |
+| `//examples/riscv-none-elf-gcc-w64` | Windows-hosted RISC-V GCC |
+| `//examples/clang:clang-darwin-arm64` and `//examples/clang:clang-darwin-x86_64` | Darwin-hosted Clang/LLD |
 
 ```sh
-bazel build //examples/riscv-none-elf-gcc         # one toolchain install tree
-bazel build //examples/riscv-none-elf-gcc:dist    # ...as a .tar.gz
-bazel build //examples/...                         # all toolchains and demos
+bazel build //examples/riscv-none-elf-gcc:dist
+bazel build //examples/...
 ```
 
-On small machines add `--jobs=2`: several toolchains building in
-parallel (each action runs `make -j4` internally) can exhaust RAM.
+The macOS SDK tree begins with a pinned Apple package. Source-built tools
+extract it and remove compiled Mach-O/archive payloads; the public tree
+retains headers, text `.tbd` stubs, and non-executable SDK metadata. SDK
+use remains subject to Apple's license.
 
-The examples cross-compile the same bare-metal sources with each freshly
-built toolchain (`hello.elf` RISC-V, `hello-aarch64.elf`,
-`hello-arm.elf`, and `hello-w64.exe`, a real PE32+ executable linked
-against the UCRT mingw-w64 runtime) — compilers included — inside the
-same empty sandbox.
+## Documentation
 
-A full `//examples/riscv-none-elf-gcc` build transitively builds GCC three
-times: stage 1, stage 2, then the cross compiler. Progress is reported at
-the Bazel-action level; on failure the rule prints the tail of the
-relevant configure, build, or install log.
-
-## How an empty sandbox builds GCC
-
-The interesting part is what substitutes for the host system
-(`internal/build_defs.bzl`):
-
-- **Shell & userland** — the real GNU userland, built from source by the
-  stage-1 compiler and merged into one prefix
-  (`//internal:userland-s2`): bash 5.3, coreutils 9.7, sed, grep,
-  findutils, diffutils, tar, gzip, gawk and GNU make, all static. Stage-2
-  and later actions exec its bash directly (Bazel `genrule`s are never
-  used: they require the *host* bash); the prebuilt Alpine
-  `busybox-static` package is only the bootstrap shell for stage 0/1 and
-  for building the userland packages themselves. GNU tools are used
-  deliberately rather than busybox reimplementations: an earlier
-  busybox-based userland
-  silently corrupted GCC's generated option tables (GCC's `optc-gen.awk`
-  feeds raw language names like `C++` to awk as regexes; busybox awk
-  drops the `CL_CXX` bits, yielding a compiler that ignores `-std=` —
-  Alpine's busybox only works because Alpine patches it).
-  The minimal public userland composition is Bash plus coreutils;
-  package-specific workflows add make, sed, grep, or other component
-  trees as needed (see
-  [Consumer guide](docs/consumers.md#minimal-and-custom-userlands)).
-- **`/bin/sh`** — source trees hardcode `#!/bin/sh` in helper scripts
-  (gcc's `move-if-change`, `install-sh`, …), and the hermetic sandbox has
-  no `/bin`. The sandbox root is writable, so each action creates
-  `/bin/sh` *inside the ephemeral sandbox*, pointing at its shell (the
-  userland bash, or the seed busybox during bootstrap). Nothing is
-  mounted from the host; the link dies with the sandbox.
-- **Host compiler** — built from source. The fully static
-  [musl.cc](https://musl.cc) native GCC 11.2.1 is only a *stage-0 seed*:
-  it compiles a stage-1 host toolchain (binutils 2.45 + musl 1.2.5 +
-  GCC 15.2.0, `<arch>-unknown-linux-musl`, fully static) from the pinned
-  sources; stage-1 then rebuilds the same three components as stage-2
-  with the seed absent from the sandbox; and the example riscv-none-elf
-  toolchain is compiled exclusively by stage-2. **No prebuilt compiler
-  binary is in the input set of any action that produces example
-  artifacts.** Static binaries need no ELF interpreter or shared
-  libraries, so they run in an empty root as plain action inputs. Every
-  compiler spelling (`CC`, `CXX`, `CC_FOR_BUILD`, `CXX_FOR_BUILD`) pins
-  `-static`, so configure run-tests and build-time generators also work —
-  and the resulting riscv-none-elf toolchain is itself fully static.
-  (`LDFLAGS=--static` rather than `-static`, because libtool swallows the
-  latter.)
-- **GNU make** — bootstrapped from source (`//internal:make`) using
-  make's own `build.sh`, which exists precisely to build make when you
-  don't have make.
-- **autoconf quirks** — `MKDIR_P`/`INSTALL` are pinned to busybox applets
-  in the *environment* (autoconf 2.69's "race-free mkdir -p" probe only
-  whitelists GNU coreutils and would otherwise fall back to the
-  shebang-executed `install-sh`; the GCC/binutils top-level configure
-  does not forward `VAR=VALUE` args to sub-configures, but environment
-  variables pass through). `MAKEINFO=true` is forced on the make command
-  line so stale-timestamp `.texi` files in release tarballs don't trigger
-  a texinfo dependency.
-
-### Build stages
-
-0. `//internal:make` — GNU make 4.4.1, bootstrapped with busybox `sh` +
-   the seed gcc.
-1. **Stage 1** (`host-binutils-s1`, `musl-s1`, `host-gcc-s1`) — a native
-   `<arch>-unknown-linux-musl` host toolchain compiled by the prebuilt
-   seed. This is the only place the seed compiler is ever used.
-1b. **Tooling** (`make-s2` and the userland packages `bash-s2`,
-   `coreutils-s2`, `sed-s2`, `grep-s2`, `findutils-s2`, `diffutils-s2`,
-   `tar-s2`, `gzip-s2`, `gawk-s2`, merged into `userland-s2`) — rebuilt
-   from source by stage 1, still under the seed shell.
-2. **Stage 2** (`host-binutils-s2`, `musl-s2`, `host-gcc-s2`) — the same
-   toolchain rebuilt by stage 1, running on the from-source GNU
-   userland. From here on, `bazel aquery` shows **zero prebuilt files**
-   in any action's input set — compiler, shell, userland, make and awk
-   are all source-built.
-3. The toolchain subpackages under `//examples/...`, compiled by stage
-   2. The GCC targets build from a classic *combined tree*:
-   newlib/libgloss, the newlib top-level headers, and gmp/mpfr/mpc/isl
-   (the exact versions from `contrib/download_prerequisites`) are
-   assembled into the GCC source tree at fetch time by a repository
-   rule (`@gcc_combined_src`), so one configure/make builds the compiler
-   and the target C library in the right order. Each action seeds its
-   install prefix with its binutils tree, producing one merged toolchain
-   prefix; `:dist` targets produce GNU-tar'd, timestamp-normalized,
-   name-sorted tarballs.
-4. `//examples:all` — end-to-end proof: each freshly built toolchain
-   cross-compiles the example sources in the same hermetic sandbox.
-
-The staged builds put the previous stage's `bin/` and plain-named
-`<triplet>/bin/` tools on `PATH`: the GCC/binutils top-level configure
-resolves plain `ar`/`ranlib` (build == host at top level) and exports
-them to sub-configures that are cross-compiling, so plain names must
-resolve to real binutils — neither busybox nor the GNU userland provides
-an `ar`.
-
-### Windows-hosted toolchains: the Canadian cross
-
-`//examples/riscv-none-elf-gcc-w64` is the same RISC-V toolchain with
-`--host=x86_64-w64-mingw32`: a **Canadian cross** (build ≠ host ≠ target).
-No build action ever runs on Windows — everything still executes in the
-empty Linux sandbox — and the three toolchains the build needs are all
-stage-2 artifacts from this repository:
-
-- `CC`/`CXX` = `//examples/mingw-w64-gcc` (build→host) compiles GCC's own
-  sources into static PE executables;
-- `CC_FOR_BUILD` = stage 2 compiles the build-time generators;
-- `//examples/riscv-none-elf-gcc` (build→target, same GCC version, on
-  `PATH`) builds libgcc/newlib/libstdc++, because the freshly built
-  `xgcc` is a Windows binary and cannot run here.
-
-The trust chain is unchanged: zero prebuilt binaries in any producing
-action. `-Wl,--no-insert-timestamp` zeroes the PE header timestamps so
-`:dist` stays byte-reproducible. Windows binaries cannot execute in the
-sandbox, so the PE checks verify the `MZ` and `PE\0\0` signatures and the
-COFF machine field `0x8664` for x86_64 (AMD64).
-`//examples/riscv-none-elf-gcc-w64:dist` produces
-`riscv-none-elf-gcc-w64-15.2.0.tar.gz`. Real smoke tests belong on a Windows
-machine or Wine, outside the trust boundary. Windows ARM64 is deferred
-because xPack does not currently publish that host distribution.
-
-### macOS: cross from Linux against the pinned Apple SDK
-
-macOS has no equivalent of the hermetic sandbox (Seatbelt cannot present
-an empty root, and every darwin process must load Apple's dyld and
-libSystem), so macOS support goes the other direction: **build for
-darwin from inside the Linux sandbox**. Two pieces:
-
-- **The SDK** (`//trees:macos-sdk`): Apple's Command Line Tools SDK
-  package, pinned by SHA-256 from Apple's own softwareupdate CDN and
-  extracted from source-built tools only — bsdtar/libarchive reads the
-  outer xar and the inner cpio, and `internal/pbzx.c` (~90 lines,
-  compiled in-action) decodes the pbzx layer between them.
-  `internal/sdkprune.c` then deletes, by file magic, the couple dozen
-  legacy Mach-O leftovers each SDK release carries (pre-10.8 CRT
-  objects, Tcl/Tk stub archives). What remains is **text**: headers and
-  `.tbd` linker stubs. Apple contributes no executable code to any
-  action; libSystem links at runtime on the user's Mac, exactly like
-  kernel32/UCRT in the mingw story.
-- **The compiler** (`//trees:clang`): Linux-native clang + lld
-  22.1.8, built as `//internal:host-clang-s2` from the pinned LLVM
-  source by stage 2 (with `cmake-s2` bootstrapped from source and
-  `python-s2` as LLVM's build interpreter). clang is
-  inherently multi-target and `ld64.lld` is a production Mach-O linker
-  that ad-hoc code-signs arm64 output — required on Apple Silicon.
-
-`//examples:hello-darwin` links a real arm64 Mach-O executable against
-the SDK inside the same empty sandbox; copy it to any Apple-Silicon Mac
-and it runs. Licensing note: the SDK downloads unauthenticated from
-Apple's CDN, but Apple's license ties SDK *use* to Apple-branded
-hardware — running this build in a Linux VM on a Mac satisfies that
-reading; other setups are your call. The pinned catalog URL can rot when
-Apple rotates product generations (like the Alpine apks); refresh it
-from `swscan.apple.com/content/catalogs/others/*.sucatalog`.
-
-`//examples/clang:clang-darwin-arm64` and
-`//examples/clang:clang-darwin-x86_64` complete the Canadian crosses for
-darwin-hosted toolchains on both Apple Silicon and Intel Macs. CMake and
-Python drive each cross-build; Linux-native `llvm-tblgen` and
-`clang-tblgen` from `//trees:clang` generate build-time tables while
-its Linux clang and lld cross-build the matching arm64 or x86_64 Mach-O
-tools against the pruned SDK. A magic check verifies the installed
-executables are Mach-O. `//examples/clang:clang-darwin-arm64-dist` produces
-`clang-darwin-arm64.tar.gz`; the new
-`//examples/clang:clang-darwin-x86_64-dist` produces
-`clang-darwin-x86_64.tar.gz`.
-
-### Example host archives
-
-The example workflow builds five host archives from the Linux sandbox:
-
-| delivered host | CPU | build label | archive | GitHub Actions runner |
-|----------------|-----|-------------|---------|-----------------------|
-| Linux | x86_64 | `//examples/riscv-none-elf-gcc:dist` | `riscv-none-elf-gcc-15.2.0.tar.gz` | GitHub-hosted Ubuntu x64 |
-| Linux | arm64 | `//examples/riscv-none-elf-gcc:dist` | `riscv-none-elf-gcc-15.2.0.tar.gz` | GitHub-hosted Ubuntu arm64 |
-| Windows | x86_64 | `//examples/riscv-none-elf-gcc-w64:dist` | `riscv-none-elf-gcc-w64-15.2.0.tar.gz` | GitHub-hosted Ubuntu x64 |
-| Darwin | x86_64 | `//examples/clang:clang-darwin-x86_64-dist` | `clang-darwin-x86_64.tar.gz` | GitHub-hosted Ubuntu x64 |
-| Darwin | arm64 | `//examples/clang:clang-darwin-arm64-dist` | `clang-darwin-arm64.tar.gz` | GitHub-hosted Ubuntu arm64 |
-
-All five example-archive jobs use `--jobs=1`: individual build actions already run
-parallel makes, and serial Bazel scheduling keeps hosted-runner memory use
-bounded. Every job runs on GitHub-hosted Ubuntu runners — the Darwin ones
-included, since Darwin toolchains are Canadian crosses that never execute a
-build action on macOS. A cold Darwin chain (stage 2, a native LLVM, then a
-Canadian LLVM) exceeds one 6-hour hosted job, so those jobs carry a Bazel
-disk cache in the Actions cache and resume where the previous run stopped:
-re-run the workflow until it goes green. Note that building on GitHub's
-infrastructure rather than Apple hardware is one of the "your call" setups
-under the SDK-license note above.
-
-### Trust chain
-
-Example artifacts are produced by actions whose input sets contain no
-prebuilt binaries at all (verifiable with `bazel aquery`): compiler,
-libc, binutils, shell, userland, make and awk are all built from pinned,
-auditable source. Two binary seeds remain, strictly bootstrap-only —
-they appear exclusively in stage-0/1 and tooling actions:
-
-- the musl.cc toolchain (compiles stage 1 and the stage-0 make);
-- the Alpine busybox (the bootstrap shell: building a shell from source
-  needs a shell, so some shell seed is irreducible).
-
-A literal zero-compiler-seed bootstrap (the stage0/live-bootstrap chain:
-a ~357-byte `hex0` seed → M2-Planet → GNU Mes → TinyCC → old GCC → …)
-exists today only for x86: every GCC that can target aarch64 (≥ 4.8) is
-written in C++, and every C-written GCC (≤ 4.7) cannot target aarch64,
-so TinyCC has no bridge to a modern compiler on this architecture. Two
-staged rebuilds are the strongest form available natively on
-aarch64/x86_64 alike — and note that no finite number of stages defeats
-a Thompson-style trusting-trust attack; only the hex0 route or diverse
-double-compilation does.
-
-In-tree gmp is configured by GCC's top level in generic-C mode, which
-also removes gmp's usual build-time `m4` requirement (busybox has no m4).
-
-## Fidelity
-
-Reproduced: the component versions, target triplets, and the RISC-V
-default architecture (`rv32imac/ilp32`), with relocatable,
-self-contained install trees of static host binaries (typical binary
-distributions ship dynamic binaries with bundled shared libraries;
-static is what makes an empty-root build possible).
-
-Deliberately narrowed, for build time — each is a switch in the
-`//examples` toolchain packages:
-
-- single multilib (e.g. `--disable-multilib --with-arch=rv32imac
-  --with-abi=ilp32` for RISC-V) instead of the full multilib lists;
-- `--enable-languages=c,c++` (no Fortran);
-- no GDB (a separate source package that would roughly double the
-  build).
-
-## Host requirements
-
-- Linux with user namespaces available (the hermetic sandbox is
-  Linux-only). On Ubuntu 24.04+ with AppArmor userns restriction
-  (`kernel.apparmor_restrict_unprivileged_userns=1`), Bazel's
-  `linux-sandbox` cannot create its namespaces; either disable that
-  sysctl or install an AppArmor profile granting `userns` to
-  `linux-sandbox`.
-- Bazel 9.0.0 or newer.
-- An `x86_64` or `aarch64` host. Both are analyzed in CI at the supported
-  Bazel floor and latest release, and the example workflow builds native
-  toolchains on both architectures.
-- Network access on first build to fetch the pinned archives (GNU ftp,
-  sourceware, musl.cc, Alpine CDN).
-
-## Pinned inputs
-
-Sources: gcc 15.2.0, binutils 2.45, newlib 4.5.0.20241231, make 4.4.1,
-musl 1.2.5, gmp 6.2.1, mpfr 4.1.0, mpc 1.2.1, isl 0.24 — all by SHA-256
-in `MODULE.bazel` / `internal/gcc_combined_repo.bzl`.
-
-Userland and tool sources: bash 5.3, coreutils 9.7, sed 4.9, grep 3.11,
-findutils 4.10.0, diffutils 3.12, tar 1.35, gzip 1.14, gawk 5.3.2 — by
-SHA-256 in `MODULE.bazel`.
-
-Additional build-tool sources: CMake 3.31.7, Python 3.12.8, and LLVM
-22.1.8. macOS extraction and SDK inputs: zlib 1.3.2, xz 5.8.3,
-libarchive 3.8.7, and the Apple Command Line Tools SDK package
-(MacOSX26.5.sdk; headers + `.tbd` text stubs after pruning). All are
-pinned by SHA-256 in `MODULE.bazel`.
-
-Bootstrap seeds (stage 0/1 only): musl.cc native toolchains (pinned
-`more.musl.cc` 11.2.1 archives) and Alpine `busybox-static` 1.37.0-r20
-apks, also by SHA-256. (Alpine's CDN only serves the current revision of an active
-branch, so the apk URLs can rot when the package is bumped — see the note
-in `MODULE.bazel`.)
+- [Consumer guide](docs/consumers.md)
+- [API reference](docs/api.md)
+- [Trust and verification](docs/trust.md)
