@@ -1,0 +1,127 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  buildifier:
+    name: Buildifier
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Install buildifier
+        run: |
+          curl -fsSLo "$RUNNER_TEMP/buildifier" \
+            https://github.com/bazelbuild/buildtools/releases/download/v8.5.1/buildifier-linux-amd64
+          echo "887377fc64d23a850f4d18a077b5db05b19913f4b99b270d193f3c7334b5a9a7  $RUNNER_TEMP/buildifier" |
+            sha256sum --check -
+          chmod +x "$RUNNER_TEMP/buildifier"
+
+      - name: Check Starlark formatting and lint
+        run: "$RUNNER_TEMP/buildifier -mode=check -lint=warn -r ."
+
+  analysis:
+    name: Analysis (${{ matrix.arch }}, Bazel ${{ matrix.bazel }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+            bazel: 9.0.0
+          - arch: x86_64
+            runner: ubuntu-24.04
+            bazel: latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            bazel: 9.0.0
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            bazel: latest
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      USE_BAZEL_VERSION: ${{ matrix.bazel }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Reclaim runner disk
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.19.0
+        with:
+          bazelisk-cache: true
+          repository-cache: true
+
+      - name: Report Bazel version
+        run: bazel version
+
+      - name: Analyze all targets
+        run: bazel build --nobuild //...
+
+  consumer:
+    name: External consumer
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Reclaim runner disk
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+
+      - name: Allow the hermetic Linux sandbox
+        run: |
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+      - name: Cache pinned source downloads
+        uses: actions/cache@v5
+        with:
+          path: ${{ runner.temp }}/stage2-e2e-repository-cache
+          key: bazel-e2e-repositories-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'internal/gcc_combined_repo.bzl', 'e2e/consumer/MODULE.bazel') }}
+          restore-keys: |
+            bazel-e2e-repositories-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Restore Bazel results
+        id: bazel_cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/stage2-e2e-disk-cache
+          key: bazel-disk-e2e-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            bazel-disk-e2e-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.19.0
+        with:
+          bazelisk-cache: true
+
+      - name: Build and run GNU hello as a consumer
+        working-directory: e2e/consumer
+        run: |
+          bazel build \
+            --jobs=1 \
+            --repository_cache="$RUNNER_TEMP/stage2-e2e-repository-cache" \
+            --disk_cache="$RUNNER_TEMP/stage2-e2e-disk-cache" \
+            //:hello-output
+
+      - name: Save Bazel results
+        if: ${{ !cancelled() }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/stage2-e2e-disk-cache
+          key: ${{ steps.bazel_cache.outputs.cache-primary-key }}

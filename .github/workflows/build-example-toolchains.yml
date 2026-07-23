@@ -1,4 +1,4 @@
-name: Build host toolchains
+name: Build example toolchains
 
 on:
   workflow_dispatch:
@@ -14,7 +14,7 @@ permissions:
 # Queue multi-hour builds so a rerun resumes one cache lineage instead of
 # racing a concurrent writer for it.
 concurrency:
-  group: build-host-toolchains
+  group: build-example-toolchains
   cancel-in-progress: false
 
 jobs:
@@ -48,7 +48,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/stage2-repository-cache
-          key: bazel-repositories-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'toolchain/gcc_combined_repo.bzl') }}
+          key: bazel-repositories-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'internal/gcc_combined_repo.bzl') }}
           restore-keys: |
             bazel-repositories-${{ runner.os }}-${{ runner.arch }}-
 
@@ -61,13 +61,13 @@ jobs:
           bazel build \
             --jobs=1 \
             --repository_cache="$RUNNER_TEMP/stage2-repository-cache" \
-            //tools/riscv-none-elf-gcc:dist
+            //examples/riscv-none-elf-gcc:dist
 
       - name: Upload Linux toolchain
         uses: actions/upload-artifact@v6
         with:
           name: riscv-none-elf-gcc-linux-${{ matrix.arch }}
-          path: bazel-bin/tools/riscv-none-elf-gcc/riscv-none-elf-gcc-15.2.0.tar.gz
+          path: bazel-bin/examples/riscv-none-elf-gcc/riscv-none-elf-gcc-15.2.0.tar.gz
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
@@ -93,7 +93,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/stage2-repository-cache
-          key: bazel-repositories-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'toolchain/gcc_combined_repo.bzl') }}
+          key: bazel-repositories-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'internal/gcc_combined_repo.bzl') }}
           restore-keys: |
             bazel-repositories-${{ runner.os }}-${{ runner.arch }}-
 
@@ -105,14 +105,14 @@ jobs:
           bazel build \
             --jobs=1 \
             --repository_cache="$RUNNER_TEMP/stage2-repository-cache" \
-            //tools/riscv-none-elf-gcc-w64:dist \
-            //tools/riscv-none-elf-gcc-w64:riscv-none-elf-gcc-w64-pe-check
+            //examples/riscv-none-elf-gcc-w64:dist \
+            //examples/riscv-none-elf-gcc-w64:riscv-none-elf-gcc-w64-pe-check
 
       - name: Upload Windows toolchain
         uses: actions/upload-artifact@v6
         with:
           name: riscv-none-elf-gcc-windows-x86_64
-          path: bazel-bin/tools/riscv-none-elf-gcc-w64/riscv-none-elf-gcc-w64-15.2.0.tar.gz
+          path: bazel-bin/examples/riscv-none-elf-gcc-w64/riscv-none-elf-gcc-w64-15.2.0.tar.gz
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
@@ -126,12 +126,12 @@ jobs:
         include:
           - arch: x86_64
             runner: ubuntu-24.04
-            target: //tools/clang:clang-darwin-x86_64-dist
-            file: bazel-bin/tools/clang/clang-darwin-x86_64.tar.gz
+            target: //examples/clang:clang-darwin-x86_64-dist
+            file: bazel-bin/examples/clang/clang-darwin-x86_64.tar.gz
           - arch: arm64
             runner: ubuntu-24.04-arm
-            target: //tools/clang:clang-darwin-arm64-dist
-            file: bazel-bin/tools/clang/clang-darwin-arm64.tar.gz
+            target: //examples/clang:clang-darwin-arm64-dist
+            file: bazel-bin/examples/clang/clang-darwin-arm64.tar.gz
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 360
     steps:
@@ -151,7 +151,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/stage2-repository-cache
-          key: bazel-repositories-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'toolchain/gcc_combined_repo.bzl') }}
+          key: bazel-repositories-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'internal/gcc_combined_repo.bzl') }}
           restore-keys: |
             bazel-repositories-${{ runner.os }}-${{ runner.arch }}-
 

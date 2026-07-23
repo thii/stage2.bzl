@@ -1,8 +1,8 @@
-load("//toolchain:stage2.bzl", "stage2_hermetic_run")
-load(":riscv_binary.bzl", "cross_binary")
+load("//:defs.bzl", "stage2_run")
+load(":cross_binary.bzl", "cross_binary")
 
 # End-to-end examples: the same bare-metal sources cross-compiled by
-# each toolchain that //tools just built from source. The riscv flags
+# each source-built toolchain in the subpackages below. The RISC-V flags
 # spell out the target (redundantly: the compiler was configured with
 # --with-arch=rv32imac --with-abi=ilp32); the others use their configured
 # defaults. The mingw demo links a real PE32+ executable against the
@@ -24,13 +24,13 @@ cross_binary(
         "compute.c",
         "hello.c",
     ],
+    hdrs = ["compute.h"],
     copts = [
         "-march=rv32imac",
         "-mabi=ilp32",
     ] + _BAREMETAL_COPTS,
-    hdrs = ["compute.h"],
     target_prefix = "riscv-none-elf",
-    toolchain = "//tools/riscv-none-elf-gcc",
+    toolchain = "//examples/riscv-none-elf-gcc",
 )
 
 cross_binary(
@@ -39,10 +39,10 @@ cross_binary(
         "compute.c",
         "hello.c",
     ],
-    copts = _BAREMETAL_COPTS,
     hdrs = ["compute.h"],
+    copts = _BAREMETAL_COPTS,
     target_prefix = "aarch64-none-elf",
-    toolchain = "//tools/aarch64-none-elf-gcc",
+    toolchain = "//examples/aarch64-none-elf-gcc",
 )
 
 cross_binary(
@@ -51,10 +51,10 @@ cross_binary(
         "compute.c",
         "hello.c",
     ],
-    copts = _BAREMETAL_COPTS,
     hdrs = ["compute.h"],
+    copts = _BAREMETAL_COPTS,
     target_prefix = "arm-none-eabi",
-    toolchain = "//tools/arm-none-eabi-gcc",
+    toolchain = "//examples/arm-none-eabi-gcc",
 )
 
 cross_binary(
@@ -63,14 +63,14 @@ cross_binary(
         "compute.c",
         "hello.c",
     ],
+    hdrs = ["compute.h"],
     copts = [
         "-Os",
         "-Wall",
     ],
-    hdrs = ["compute.h"],
     out_ext = "exe",
     target_prefix = "x86_64-w64-mingw32",
-    toolchain = "//tools/mingw-w64-gcc",
+    toolchain = "//examples/mingw-w64-gcc",
 )
 
 # macOS demo: the from-source clang + ld64.lld link an arm64 Mach-O
@@ -78,15 +78,16 @@ cross_binary(
 # the same empty sandbox. It cannot run here — the structural check is
 # the Mach-O magic — but it runs on any Apple-Silicon Mac: ld64.lld
 # ad-hoc code-signs arm64 output.
-stage2_hermetic_run(
+stage2_run(
     name = "hello-darwin",
-    files = {
-        "//toolchain:macos-sdk": "SDK",
-        ":compute.c": "COMPUTE_C",
-        ":hello.c": "HELLO_C",
-    },
     out = "hello-darwin",
-    path_trees = ["//tools/clang"],
+    extra_inputs = ["compute.h"],
+    inputs = {
+        "COMPUTE_C": ":compute.c",
+        "HELLO_C": ":hello.c",
+        "SDK": "//trees:macos-sdk",
+    },
+    path_trees = ["//trees:clang"],
     script = """clang -target arm64-apple-macos11 -isysroot %{SDK} -fuse-ld=lld \
     -Os -Wall -o %{OUT} %{HELLO_C} %{COMPUTE_C}
 magic=$(od -An -tx1 -N4 %{OUT} | tr -d ' \\n')
@@ -95,5 +96,4 @@ if [ "$magic" != "cffaedfe" ]; then
     exit 1
 fi
 """,
-    srcs = ["compute.h"],
 )

@@ -1,4 +1,4 @@
-// One demo source for every toolchain in //tools. On the bare-metal
+// One demo source for every toolchain under //examples. On the bare-metal
 // targets (linked with newlib and -specs=nosys.specs against the default
 // linker script), "console" output goes to the memory-mapped UART
 // transmit register of QEMU's virt machine (16550 at 0x10000000). The

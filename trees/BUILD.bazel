@@ -1,0 +1,55 @@
+package(default_visibility = ["//visibility:public"])
+
+alias(
+    name = "cc",
+    actual = "//internal:host-gcc-s2",
+)
+
+alias(
+    name = "default_userland",
+    actual = "//internal:userland-s2",
+)
+
+[
+    alias(
+        name = name,
+        actual = "//internal:" + name + "-s2",
+    )
+    for name in [
+        "bash",
+        "coreutils",
+        "sed",
+        "grep",
+        "findutils",
+        "diffutils",
+        "tar",
+        "gzip",
+        "gawk",
+        "make",
+    ]
+]
+
+alias(
+    name = "bsdtar",
+    actual = "//internal:libarchive-s2",
+)
+
+alias(
+    name = "cmake",
+    actual = "//internal:cmake-s2",
+)
+
+alias(
+    name = "python",
+    actual = "//internal:python-s2",
+)
+
+alias(
+    name = "clang",
+    actual = "//internal:host-clang-s2",
+)
+
+alias(
+    name = "macos-sdk",
+    actual = "//internal:macos-sdk",
+)

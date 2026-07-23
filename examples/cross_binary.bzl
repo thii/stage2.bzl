@@ -1,4 +1,4 @@
-"""Compile a program with one of the just-built cross toolchains.
+"""Compile an example program with one of the just-built cross toolchains.
 
 The toolchain install tree is an ordinary Bazel output (a tree artifact),
 so this is the end-to-end proof: a compiler that was built from source
@@ -59,10 +59,10 @@ cross_binary = rule(
             allow_single_file = True,
         ),
         "userland": attr.label(
-            default = Label("//toolchain:userland-s2"),
+            default = Label("//trees:default_userland"),
             allow_single_file = True,
             cfg = "exec",
         ),
     },
-    doc = "A binary built with one of the //tools cross toolchains.",
+    doc = "A binary built with one of the example cross toolchains.",
 )

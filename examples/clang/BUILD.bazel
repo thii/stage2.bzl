@@ -1,83 +1,28 @@
-# clang + lld 22.1.8, linux-musl hosted, built from the pinned LLVM
-# source by stage 2 (cmake-s2 bootstrapped from source; python-s2 is the
-# build interpreter LLVM's cmake requires). clang is inherently
-# multi-target, and ld64.lld is a production Mach-O linker that ad-hoc
-# code-signs arm64 output, so this single package is also the darwin
-# "leg": it can compile and link for arm64-apple-macos against
-# //toolchain:macos-sdk with no Apple-built tool involved. The llvm-*
-# Mach-O binutils replacements (libtool-darwin, install-name-tool) come
-# along for toolchain assembly work.
-#
-# make (not ninja) drives the build; the -j1 retry absorbs the rare
-# OOM-killed link on small machines instead of failing the whole action.
+# Darwin-hosted clang + lld 22.1.8 examples, Canadian-crossed with the
+# reusable Linux-native //trees:clang and the pruned
+# //trees:macos-sdk. No Mach-O output executes during these builds.
 
-load("//toolchain:build_defs.bzl", "dist_tarball")
-load("//toolchain:stage2.bzl", "stage2_hermetic_run")
+load("//:defs.bzl", "stage2_dist_tarball", "stage2_run")
 
-package(default_visibility = ["//visibility:public"])
-
-stage2_hermetic_run(
-    name = "clang",
-    files = {
-        "//toolchain:python-s2": "PYTHON",
-        "@llvm_src//:llvm/CMakeLists.txt": "LLVM_CML",
-    },
-    out_tree = True,
-    path_trees = [
-        "//toolchain:host-gcc-s2",
-        "//toolchain:cmake-s2",
-        "//toolchain:python-s2",
-    ],
-    script = """llvmdir=$(dirname %{LLVM_CML})
-export CC="$CC_FOR_BUILD" CXX="$CXX_FOR_BUILD"
-cmake -S "$llvmdir" -B b \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_INSTALL_PREFIX=%{OUT} \
-    -DCMAKE_MAKE_PROGRAM=make \
-    '-DLLVM_ENABLE_PROJECTS=clang;lld' \
-    '-DLLVM_TARGETS_TO_BUILD=AArch64;ARM;RISCV;X86' \
-    -DCMAKE_EXE_LINKER_FLAGS=-static \
-    -DLLVM_ENABLE_ZLIB=OFF \
-    -DLLVM_ENABLE_ZSTD=OFF \
-    -DLLVM_ENABLE_LIBXML2=OFF \
-    -DLLVM_ENABLE_LIBEDIT=OFF \
-    -DLLVM_ENABLE_BINDINGS=OFF \
-    -DLLVM_INCLUDE_TESTS=OFF \
-    -DLLVM_INCLUDE_EXAMPLES=OFF \
-    -DLLVM_INCLUDE_BENCHMARKS=OFF \
-    -DLLVM_INCLUDE_DOCS=OFF \
-    -DCLANG_ENABLE_STATIC_ANALYZER=OFF \
-    -DPython3_EXECUTABLE=%{PYTHON}/bin/python3
-make -C b -j %{JOBS} clang lld llvm-ar llvm-nm llvm-objcopy llvm-strip \
-    llvm-libtool-darwin llvm-install-name-tool llvm-tblgen clang-tblgen || \
-    make -C b -j 1 clang lld llvm-ar llvm-nm llvm-objcopy llvm-strip \
-        llvm-libtool-darwin llvm-install-name-tool llvm-tblgen clang-tblgen
-make -C b install-clang install-clang-resource-headers install-lld \
-    install-llvm-ar install-llvm-ranlib install-llvm-nm install-llvm-strip \
-    install-llvm-objcopy install-llvm-libtool-darwin \
-    install-llvm-install-name-tool
-install -m 0755 b/bin/llvm-tblgen b/bin/clang-tblgen %{OUT}/bin/
-""",
-    srcs = ["@llvm_src//:srcs"],
-)
+package(default_visibility = ["//examples:__subpackages__"])
 
 # arm64-Darwin-hosted clang + lld, Canadian-crossed entirely inside the
-# Linux sandbox. :clang is both the build->host compiler/tool suite and
-# the source of native TableGen executables; none of the Mach-O outputs is
-# executed while the tree is being built.
-stage2_hermetic_run(
+# Linux sandbox. //trees:clang is both the build->host compiler/tool
+# suite and the source of native TableGen executables.
+stage2_run(
     name = "clang-darwin-arm64",
-    files = {
-        ":clang": "HOST_LLVM",
-        "//toolchain:macos-sdk": "SDK",
-        "//toolchain:python-s2": "PYTHON",
-        "@llvm_src//:llvm/CMakeLists.txt": "LLVM_CML",
+    extra_inputs = ["@llvm_src//:srcs"],
+    inputs = {
+        "HOST_LLVM": "//trees:clang",
+        "LLVM_CML": "@llvm_src//:llvm/CMakeLists.txt",
+        "PYTHON": "//trees:python",
+        "SDK": "//trees:macos-sdk",
     },
     out_tree = True,
     path_trees = [
-        ":clang",
-        "//toolchain:cmake-s2",
-        "//toolchain:python-s2",
+        "//trees:clang",
+        "//trees:cmake",
+        "//trees:python",
     ],
     script = """llvmdir=$(dirname %{LLVM_CML})
 hostllvm=%{HOST_LLVM}
@@ -145,33 +90,31 @@ if [ "$magic" != "cffaedfe" ]; then
     exit 1
 fi
 """,
-    srcs = ["@llvm_src//:srcs"],
 )
 
-dist_tarball(
+stage2_dist_tarball(
     name = "clang-darwin-arm64-dist",
     out = "clang-darwin-arm64.tar.gz",
     tree = ":clang-darwin-arm64",
-    userland = "//toolchain:userland-s2",
 )
 
 # x86_64-Darwin-hosted clang + lld, Canadian-crossed entirely inside the
-# Linux sandbox. :clang is both the build->host compiler/tool suite and
-# the source of native TableGen executables; none of the Mach-O outputs is
-# executed while the tree is being built.
-stage2_hermetic_run(
+# Linux sandbox. //trees:clang is both the build->host compiler/tool
+# suite and the source of native TableGen executables.
+stage2_run(
     name = "clang-darwin-x86_64",
-    files = {
-        ":clang": "HOST_LLVM",
-        "//toolchain:macos-sdk": "SDK",
-        "//toolchain:python-s2": "PYTHON",
-        "@llvm_src//:llvm/CMakeLists.txt": "LLVM_CML",
+    extra_inputs = ["@llvm_src//:srcs"],
+    inputs = {
+        "HOST_LLVM": "//trees:clang",
+        "LLVM_CML": "@llvm_src//:llvm/CMakeLists.txt",
+        "PYTHON": "//trees:python",
+        "SDK": "//trees:macos-sdk",
     },
     out_tree = True,
     path_trees = [
-        ":clang",
-        "//toolchain:cmake-s2",
-        "//toolchain:python-s2",
+        "//trees:clang",
+        "//trees:cmake",
+        "//trees:python",
     ],
     script = """llvmdir=$(dirname %{LLVM_CML})
 hostllvm=%{HOST_LLVM}
@@ -240,12 +183,10 @@ if [ "$header" != "cffaedfe07000001" ]; then
     exit 1
 fi
 """,
-    srcs = ["@llvm_src//:srcs"],
 )
 
-dist_tarball(
+stage2_dist_tarball(
     name = "clang-darwin-x86_64-dist",
     out = "clang-darwin-x86_64.tar.gz",
     tree = ":clang-darwin-x86_64",
-    userland = "//toolchain:userland-s2",
 )

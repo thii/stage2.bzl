@@ -1,4 +1,4 @@
-"""Repository rule assembling the GCC "combined tree".
+"""Internal repository rule assembling the GCC "combined tree".
 
 GCC's top-level build system natively supports building in-tree copies of
 its prerequisites (gmp/mpfr/mpc/isl, versions from
@@ -15,6 +15,8 @@ In-tree gmp is configured by GCC with assembly disabled (generic C), which
 conveniently also removes gmp's build-time m4 requirement — busybox has no
 m4 applet.
 """
+
+visibility("//...")
 
 _GCC = struct(
     url = [
@@ -112,7 +114,7 @@ def _impl(rctx):
         bb,
         "sh",
         "-c",
-        'for f in _newlib/include/* _newlib/include/.[!.]*; do ' +
+        "for f in _newlib/include/* _newlib/include/.[!.]*; do " +
         '[ -e "$f" ] || continue; b="${f##*/}"; ' +
         '[ -e "include/$b" ] || cp -r "$f" "include/$b"; done',
     ])

@@ -1,4 +1,4 @@
-# GNU x86_64-w64-mingw32 (Windows) cross toolchain: GCC 15.2.0 +
+# Example GNU x86_64-w64-mingw32 (Windows) cross toolchain: GCC 15.2.0 +
 # binutils 2.45 + mingw-w64 v12 (UCRT).
 #
 # Unlike the newlib targets, mingw needs the classic multi-step dance:
@@ -8,25 +8,23 @@
 # against the CRT. Narrowed: --enable-threads=win32 (no winpthreads, so
 # no std::thread in libstdc++), C/C++ only, no multilib.
 
-load("//toolchain:build_defs.bzl", "dist_tarball")
 load(
-    "//toolchain:stage2.bzl",
+    "//:defs.bzl",
     "BINUTILS_ARGS",
     "OPT_FLAGS",
-    "STAGE_CC",
     "stage2_autotools_build",
+    "stage2_dist_tarball",
 )
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//examples:__subpackages__"])
 
 _TARGET = "x86_64-w64-mingw32"
 
 stage2_autotools_build(
     name = "mingw-binutils",
-    configure = "@binutils_src//:configure",
-    configure_args = ["--target=" + _TARGET] + BINUTILS_ARGS + OPT_FLAGS + STAGE_CC,
-    path_trees = ["//toolchain:host-gcc-s2"],
     srcs = "@binutils_src//:srcs",
+    configure = "@binutils_src//:configure",
+    configure_args = ["--target=" + _TARGET] + BINUTILS_ARGS + OPT_FLAGS,
 )
 
 # Windows API headers: installable before any compiler exists. Installed
@@ -34,19 +32,21 @@ stage2_autotools_build(
 # in $prefix/$target automatically, no sysroot needed.
 stage2_autotools_build(
     name = "mingw-headers",
+    srcs = "@mingw_w64_src//:srcs",
     configure = "@mingw_w64_src//:mingw-w64-headers/configure",
     configure_args = [
         "--host=" + _TARGET,
         "--with-default-msvcrt=ucrt",
     ],
     prefix_subdir = _TARGET,
-    srcs = "@mingw_w64_src//:srcs",
+    stage_cc = False,
 )
 
 # C-only gcc, built and installed only as far as the compiler proper
 # (all-gcc/install-gcc): enough to compile the CRT, no target libraries.
 stage2_autotools_build(
     name = "mingw-gcc-stage1",
+    srcs = "@gcc_combined_src//:srcs",
     configure = "@gcc_combined_src//:configure",
     configure_args = [
         "--target=" + _TARGET,
@@ -57,21 +57,20 @@ stage2_autotools_build(
         "--disable-multilib",
         "--enable-checking=release",
         "--disable-dependency-tracking",
-    ] + OPT_FLAGS + STAGE_CC,
+    ] + OPT_FLAGS,
     install_base = [
         ":mingw-binutils",
         ":mingw-headers",
     ],
     install_targets = "install-gcc",
     make_targets = "all-gcc",
-    path_trees = ["//toolchain:host-gcc-s2"],
-    srcs = "@gcc_combined_src//:srcs",
 )
 
 # The mingw-w64 C runtime, compiled by the stage-1 cross gcc (which
 # carries binutils and the headers in its own merged prefix).
 stage2_autotools_build(
     name = "mingw-crt",
+    srcs = "@mingw_w64_src//:srcs",
     configure = "@mingw_w64_src//:mingw-w64-crt/configure",
     configure_args = [
         "--host=" + _TARGET,
@@ -79,13 +78,14 @@ stage2_autotools_build(
     ],
     path_trees = [":mingw-gcc-stage1"],
     prefix_subdir = _TARGET,
-    srcs = "@mingw_w64_src//:srcs",
+    stage_cc = False,
 )
 
 # Full C/C++ gcc: with headers + CRT present in the prefix, a single
 # fresh configure/make builds compiler and target libraries in order.
 stage2_autotools_build(
     name = "mingw-w64-gcc",
+    srcs = "@gcc_combined_src//:srcs",
     configure = "@gcc_combined_src//:configure",
     configure_args = [
         "--target=" + _TARGET,
@@ -100,19 +100,16 @@ stage2_autotools_build(
         "--enable-checking=release",
         "--disable-dependency-tracking",
         "--disable-libstdcxx-pch",
-    ] + OPT_FLAGS + STAGE_CC,
+    ] + OPT_FLAGS,
     install_base = [
         ":mingw-binutils",
         ":mingw-headers",
         ":mingw-crt",
     ],
-    path_trees = ["//toolchain:host-gcc-s2"],
-    srcs = "@gcc_combined_src//:srcs",
 )
 
-dist_tarball(
+stage2_dist_tarball(
     name = "dist",
     out = "mingw-w64-gcc-15.2.0.tar.gz",
     tree = ":mingw-w64-gcc",
-    userland = "//toolchain:userland-s2",
 )
