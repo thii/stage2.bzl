@@ -164,8 +164,9 @@ jobs:
       # This does place SDK-derived trees in the repo-private Actions
       # cache (10 GB, LRU-evicted), unlike the pinned-download cache
       # policy on the other jobs.
-      - name: Cache Bazel results
-        uses: actions/cache@v4
+      - name: Restore Bazel results
+        id: bazel_cache
+        uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/stage2-disk-cache
           key: bazel-disk-darwin-${{ matrix.arch }}-${{ github.run_id }}
@@ -181,11 +182,29 @@ jobs:
       # success for this step; a real build error still fails it.
       - name: Build Darwin toolchain
         run: |
+          set +e
           timeout --signal=INT 320m bazel build \
             --jobs=1 \
             --repository_cache="$RUNNER_TEMP/stage2-repository-cache" \
             --disk_cache="$RUNNER_TEMP/stage2-disk-cache" \
-            "${{ matrix.target }}" || [[ $? -eq 124 ]]
+            "${{ matrix.target }}"
+          build_status=$?
+          set -e
+          if [[ $build_status -eq 124 ]]; then
+            echo "::notice::Darwin ${{ matrix.arch }} reached this run's build budget; completed actions will be cached for the next run."
+            exit 0
+          fi
+          exit "$build_status"
+
+      # The combined cache action skips its post-save hook after a failed
+      # build. Save explicitly so successful prerequisite actions survive
+      # both ordinary failures and the controlled timeout above.
+      - name: Save Bazel results
+        if: ${{ !cancelled() }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/stage2-disk-cache
+          key: ${{ steps.bazel_cache.outputs.cache-primary-key }}
 
       - name: Check whether the toolchain finished this run
         id: outcome

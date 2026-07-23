@@ -211,6 +211,7 @@ cmake -S "$llvmdir" -B b \
     '-DLLVM_TARGETS_TO_BUILD=AArch64;ARM;RISCV;X86' \
     -DLLVM_HOST_TRIPLE=x86_64-apple-macos11 \
     -DLLVM_DEFAULT_TARGET_TRIPLE=x86_64-apple-macos11 \
+    -DLLVM_DISABLE_ASSEMBLY_FILES=ON \
     -DLLVM_TABLEGEN="$hostllvm/bin/llvm-tblgen" \
     -DCLANG_TABLEGEN="$hostllvm/bin/clang-tblgen" \
     -DLLVM_ENABLE_ZLIB=OFF \
