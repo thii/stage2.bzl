@@ -33,7 +33,7 @@ jobs:
     timeout-minutes: 360
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Reclaim runner disk
         run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
@@ -45,7 +45,7 @@ jobs:
           fi
 
       - name: Cache pinned source downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/stage2-repository-cache
           key: bazel-repositories-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'toolchain/gcc_combined_repo.bzl') }}
@@ -64,7 +64,7 @@ jobs:
             //tools/riscv-none-elf-gcc:dist
 
       - name: Upload Linux toolchain
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: riscv-none-elf-gcc-linux-${{ matrix.arch }}
           path: bazel-bin/tools/riscv-none-elf-gcc/riscv-none-elf-gcc-15.2.0.tar.gz
@@ -78,7 +78,7 @@ jobs:
     timeout-minutes: 360
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Reclaim runner disk
         run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
@@ -90,7 +90,7 @@ jobs:
           fi
 
       - name: Cache pinned source downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/stage2-repository-cache
           key: bazel-repositories-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'toolchain/gcc_combined_repo.bzl') }}
@@ -109,7 +109,7 @@ jobs:
             //tools/riscv-none-elf-gcc-w64:riscv-none-elf-gcc-w64-pe-check
 
       - name: Upload Windows toolchain
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: riscv-none-elf-gcc-windows-x86_64
           path: bazel-bin/tools/riscv-none-elf-gcc-w64/riscv-none-elf-gcc-w64-15.2.0.tar.gz
@@ -136,7 +136,7 @@ jobs:
     timeout-minutes: 360
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Reclaim runner disk
         run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
@@ -148,7 +148,7 @@ jobs:
           fi
 
       - name: Cache pinned source downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/stage2-repository-cache
           key: bazel-repositories-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'toolchain/gcc_combined_repo.bzl') }}
@@ -166,7 +166,7 @@ jobs:
       # policy on the other jobs.
       - name: Restore Bazel results
         id: bazel_cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/stage2-disk-cache
           key: bazel-disk-darwin-${{ matrix.arch }}-${{ github.run_id }}
@@ -201,7 +201,7 @@ jobs:
       # both ordinary failures and the controlled timeout above.
       - name: Save Bazel results
         if: ${{ !cancelled() }}
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/stage2-disk-cache
           key: ${{ steps.bazel_cache.outputs.cache-primary-key }}
@@ -218,7 +218,7 @@ jobs:
 
       - name: Upload Darwin toolchain
         if: steps.outcome.outputs.built == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: clang-darwin-${{ matrix.arch }}
           path: ${{ matrix.file }}
