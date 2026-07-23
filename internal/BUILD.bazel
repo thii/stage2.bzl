@@ -28,6 +28,9 @@ alias(
         },
         no_match_error = _NO_MATCH,
     ),
+    # Public wrappers instantiate rules in the consumer's package. The
+    # attribute remains present even when a source-built userland supersedes it.
+    visibility = ["//visibility:public"],
 )
 
 alias(
