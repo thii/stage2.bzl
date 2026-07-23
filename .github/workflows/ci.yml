@@ -59,6 +59,12 @@ jobs:
       - name: Reclaim runner disk
         run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
 
+      - name: Allow the hermetic Linux sandbox
+        run: |
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.19.0
         with:
