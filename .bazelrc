@@ -11,7 +11,7 @@ build --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 # busybox-static), and each action's preamble builds its own userland inside
 # the sandbox: a busybox applet symlink farm on PATH, /bin/sh -> busybox,
 # and a pinned hermetic environment (see _PREAMBLE in
-# toolchain/build_defs.bzl).
+# internal/build_defs.bzl).
 # ---------------------------------------------------------------------------
 common --enable_platform_specific_config
 build:linux --experimental_use_hermetic_linux_sandbox

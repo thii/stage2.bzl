@@ -1,0 +1,23 @@
+load(
+    "@stage2.bzl//:defs.bzl",
+    "stage2_autotools_build",
+    "stage2_run",
+)
+
+stage2_autotools_build(
+    name = "hello",
+    srcs = "@hello_src//:srcs",
+    configure = "@hello_src//:configure",
+    configure_args = [
+        "--disable-nls",
+        "CFLAGS=-O2 -std=gnu17",
+        "LDFLAGS=--static",
+    ],
+)
+
+# Run the installed binary as a second action in the same empty sandbox.
+stage2_run(
+    name = "hello-output",
+    inputs = {"TREE": ":hello"},
+    script = "%{TREE}/bin/hello > %{OUT}\n",
+)

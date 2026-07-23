@@ -1,7 +1,17 @@
-load(":build_defs.bzl", "autotools_build", "dist_tarball", "make_bootstrap", "tree_merge")
-load(":stage2.bzl", "STAGE_CC", "stage2_autotools_build", "stage2_hermetic_run")
+# Private implementation graph; public aliases live in //trees.
 
-package(default_visibility = ["//visibility:public"])
+load(":build_defs.bzl", "autotools_build", "make_bootstrap", "tree_merge")
+load(":stage2.bzl", "stage2_autotools_build", "stage2_run")
+
+package(default_visibility = [":internal_consumers"])
+
+package_group(
+    name = "internal_consumers",
+    packages = [
+        "//examples/...",
+        "//trees",
+    ],
+)
 
 # ---------------------------------------------------------------------------
 # Host-architecture selection for the hermetic prerequisites.
@@ -148,16 +158,16 @@ _HOST_GCC_ARGS = [
 
 # ---------------------------------------------------------------------------
 # Stage 0: GNU make, bootstrapped without any pre-existing make.
-# make is build tooling only — it never ends up in shipped artifacts — so
+# make is build tooling only — it never ends up in produced toolchain trees — so
 # it is the one component the prebuilt seed keeps compiling.
 # ---------------------------------------------------------------------------
 
 make_bootstrap(
     name = "make",
+    srcs = "@make_src//:srcs",
     configure = "@make_src//:configure",
     musl_gcc = ":musl_gcc",
     musl_toolchain = ":musl_files",
-    srcs = "@make_src//:srcs",
 )
 
 # ---------------------------------------------------------------------------
@@ -167,16 +177,17 @@ make_bootstrap(
 
 autotools_build(
     name = "host-binutils-s1",
+    srcs = "@binutils_src//:srcs",
     configure = "@binutils_src//:configure",
     configure_args = _BINUTILS_ARGS + _SEED_CC + _OPT_FLAGS + _MUSL_TARGET,
     make = ":make",
     musl_gcc = ":musl_gcc",
     musl_toolchain = ":musl_files",
-    srcs = "@binutils_src//:srcs",
 )
 
 autotools_build(
     name = "musl-s1",
+    srcs = "@musl_src//:srcs",
     configure = "@musl_src//:configure",
     configure_args = [
         "--disable-shared",
@@ -186,11 +197,11 @@ autotools_build(
     make = ":make",
     musl_gcc = ":musl_gcc",
     musl_toolchain = ":musl_files",
-    srcs = "@musl_src//:srcs",
 )
 
 autotools_build(
     name = "host-gcc-s1",
+    srcs = "@gcc_combined_src//:srcs",
     configure = "@gcc_combined_src//:configure",
     configure_args = _HOST_GCC_ARGS + _SEED_CC + _OPT_FLAGS + _MUSL_TARGET,
     install_base = [
@@ -200,7 +211,6 @@ autotools_build(
     make = ":make",
     musl_gcc = ":musl_gcc",
     musl_toolchain = ":musl_files",
-    srcs = "@gcc_combined_src//:srcs",
 )
 
 # ---------------------------------------------------------------------------
@@ -215,6 +225,7 @@ autotools_build(
 
 make_bootstrap(
     name = "make-s2",
+    srcs = "@make_src//:srcs",
     build_cc = select(
         {
             "@platforms//cpu:aarch64": "aarch64-unknown-linux-musl-gcc -static -std=gnu17",
@@ -224,8 +235,8 @@ make_bootstrap(
     ),
     build_cxx = _STAGE_BUILD_CXX,
     configure = "@make_src//:configure",
+    out_tree = True,
     path_trees = [":host-gcc-s1"],
-    srcs = "@make_src//:srcs",
     tool_subdir = _TOOL_SUBDIR,
 )
 
@@ -239,26 +250,41 @@ _USERLAND_ARGS = [
 [
     autotools_build(
         name = name + "-s2",
+        srcs = "@" + name + "_src//:srcs",
         build_cc = _STAGE_BUILD_CC,
         build_cxx = _STAGE_BUILD_CXX,
         configure = "@" + name + "_src//:configure",
         configure_args = _USERLAND_ARGS + extra + _STAGE_CC_ONLY,
         make = ":make",
         path_trees = [":host-gcc-s1"],
-        srcs = "@" + name + "_src//:srcs",
         tool_subdir = _TOOL_SUBDIR,
     )
     for name, extra in [
         # Internal malloc misbehaves on musl; Alpine disables it too.
-        ("bash", ["--without-bash-malloc"]),
-        ("coreutils", ["--enable-install-program=hostname"]),
+        (
+            "bash",
+            ["--without-bash-malloc"],
+        ),
+        (
+            "coreutils",
+            ["--enable-install-program=hostname"],
+        ),
         ("sed", []),
-        ("grep", ["--disable-perl-regexp"]),
+        (
+            "grep",
+            ["--disable-perl-regexp"],
+        ),
         ("findutils", []),
         ("diffutils", []),
         ("tar", []),
         ("gzip", []),
-        ("gawk", ["--without-readline", "--without-mpfr"]),
+        (
+            "gawk",
+            [
+                "--without-readline",
+                "--without-mpfr",
+            ],
+        ),
     ]
 ]
 
@@ -276,6 +302,7 @@ tree_merge(
         ":tar-s2",
         ":gzip-s2",
         ":gawk-s2",
+        ":make-s2",
     ],
 )
 
@@ -287,19 +314,19 @@ tree_merge(
 
 autotools_build(
     name = "host-binutils-s2",
+    srcs = "@binutils_src//:srcs",
     build_cc = _STAGE_BUILD_CC,
     build_cxx = _STAGE_BUILD_CXX,
     configure = "@binutils_src//:configure",
     configure_args = _BINUTILS_ARGS + _OPT_FLAGS + _STAGE_CC + _MUSL_TARGET,
-    make = ":make-s2",
     path_trees = [":host-gcc-s1"],
-    srcs = "@binutils_src//:srcs",
     tool_subdir = _TOOL_SUBDIR,
     userland = ":userland-s2",
 )
 
 autotools_build(
     name = "musl-s2",
+    srcs = "@musl_src//:srcs",
     build_cc = _STAGE_BUILD_CC,
     build_cxx = _STAGE_BUILD_CXX,
     configure = "@musl_src//:configure",
@@ -307,15 +334,14 @@ autotools_build(
         "--disable-shared",
         "CFLAGS=-O2",
     ] + _STAGE_CC_ONLY,
-    make = ":make-s2",
     path_trees = [":host-gcc-s1"],
-    srcs = "@musl_src//:srcs",
     tool_subdir = _TOOL_SUBDIR,
     userland = ":userland-s2",
 )
 
 autotools_build(
     name = "host-gcc-s2",
+    srcs = "@gcc_combined_src//:srcs",
     build_cc = _STAGE_BUILD_CC,
     build_cxx = _STAGE_BUILD_CXX,
     configure = "@gcc_combined_src//:configure",
@@ -324,9 +350,7 @@ autotools_build(
         ":host-binutils-s2",
         ":musl-s2",
     ],
-    make = ":make-s2",
     path_trees = [":host-gcc-s1"],
-    srcs = "@gcc_combined_src//:srcs",
     tool_subdir = _TOOL_SUBDIR,
     userland = ":userland-s2",
 )
@@ -342,9 +366,10 @@ autotools_build(
 # zlib's configure is hand-written (not autoconf): it takes --prefix and
 # --static and reads CC from the environment, so it runs as a plain
 # hermetic script instead of through autotools_build.
-stage2_hermetic_run(
+stage2_run(
     name = "zlib-s2",
-    files = {"@zlib_src//:configure": "CONFIGURE"},
+    extra_inputs = ["@zlib_src//:srcs"],
+    inputs = {"CONFIGURE": "@zlib_src//:configure"},
     out_tree = True,
     path_trees = [":host-gcc-s2"],
     script = """export CC="$CC_FOR_BUILD" CFLAGS=-O2
@@ -352,11 +377,11 @@ stage2_hermetic_run(
 make -j %{JOBS}
 make install
 """,
-    srcs = ["@zlib_src//:srcs"],
 )
 
 stage2_autotools_build(
     name = "xz-s2",
+    srcs = "@xz_src//:srcs",
     configure = "@xz_src//:configure",
     configure_args = [
         "--disable-shared",
@@ -371,13 +396,12 @@ stage2_autotools_build(
         "--disable-dependency-tracking",
         "CFLAGS=-O2",
         "LDFLAGS=--static",
-    ] + STAGE_CC,
-    path_trees = [":host-gcc-s2"],
-    srcs = "@xz_src//:srcs",
+    ],
 )
 
 stage2_autotools_build(
     name = "libmd-s2",
+    srcs = "@libmd_src//:srcs",
     configure = "@libmd_src//:configure",
     configure_args = [
         "--disable-shared",
@@ -385,13 +409,12 @@ stage2_autotools_build(
         "--disable-dependency-tracking",
         "CFLAGS=-O2",
         "LDFLAGS=--static",
-    ] + STAGE_CC,
-    path_trees = [":host-gcc-s2"],
-    srcs = "@libmd_src//:srcs",
+    ],
 )
 
 stage2_autotools_build(
     name = "expat-s2",
+    srcs = "@expat_src//:srcs",
     configure = "@expat_src//:configure",
     configure_args = [
         "--disable-shared",
@@ -403,13 +426,12 @@ stage2_autotools_build(
         "--without-xmlwf",
         "CFLAGS=-O2",
         "LDFLAGS=--static",
-    ] + STAGE_CC,
-    path_trees = [":host-gcc-s2"],
-    srcs = "@expat_src//:srcs",
+    ],
 )
 
 stage2_autotools_build(
     name = "libarchive-s2",
+    srcs = "@libarchive_src//:srcs",
     configure = "@libarchive_src//:configure",
     configure_args = [
         "--disable-shared",
@@ -433,15 +455,13 @@ stage2_autotools_build(
         # zlib + liblzma + expat come from the trees copied into this prefix.
         "CPPFLAGS=-I%{OUT}/include",
         "LDFLAGS=--static -L%{OUT}/lib",
-    ] + STAGE_CC,
+    ],
     install_base = [
         ":expat-s2",
         ":libmd-s2",
         ":zlib-s2",
         ":xz-s2",
     ],
-    path_trees = [":host-gcc-s2"],
-    srcs = "@libarchive_src//:srcs",
 )
 
 # The extracted SDK: headers and .tbd linker stubs only. sdkprune deletes
@@ -450,13 +470,13 @@ stage2_autotools_build(
 # magic, so no prebuilt binary survives into the action inputs of
 # anything that links against this tree. None of the pruned files
 # participates in a macos11+ link.
-stage2_hermetic_run(
+stage2_run(
     name = "macos-sdk",
-    files = {
-        ":libarchive-s2": "LIBARCHIVE",
-        ":pbzx.c": "PBZX_C",
-        ":sdkprune.c": "SDKPRUNE_C",
-        "@macos_sdk_pkg//file": "PKG",
+    inputs = {
+        "LIBARCHIVE": ":libarchive-s2",
+        "PBZX_C": ":pbzx.c",
+        "PKG": "@macos_sdk_pkg//file",
+        "SDKPRUNE_C": ":sdkprune.c",
     },
     out_tree = True,
     path_trees = [
@@ -494,17 +514,18 @@ cp -a "$sdk"/. %{OUT}/
 )
 
 # ---------------------------------------------------------------------------
-# macOS host support, part 2: build tooling for //tools/clang. cmake
-# self-bootstraps with only a C++ compiler and make; CPython is the build
-# interpreter LLVM's cmake requires. Both static, both stage-2 tier.
+# Clang build support: cmake self-bootstraps with only a C++ compiler
+# and make; CPython is the build interpreter LLVM's cmake requires.
+# Both are static, stage-2-tier tools.
 # ---------------------------------------------------------------------------
 
 # cmake's `configure` wrapper execs its bootstrap script. The phase-1
 # bootstrap cmake runs *inside this action*, so it must be static too
 # (LDFLAGS); the final cmake gets -static via CMAKE_EXE_LINKER_FLAGS.
-stage2_hermetic_run(
+stage2_run(
     name = "cmake-s2",
-    files = {"@cmake_src//:configure": "CONFIGURE"},
+    extra_inputs = ["@cmake_src//:srcs"],
+    inputs = {"CONFIGURE": "@cmake_src//:configure"},
     out_tree = True,
     path_trees = [":host-gcc-s2"],
     script = """mkdir -p "$SCRATCH/cmake-bootstrap-include/linux"
@@ -519,7 +540,6 @@ export CC="$CC_FOR_BUILD" CXX="$CXX_FOR_BUILD" LDFLAGS=-static
 make -j %{JOBS}
 make install
 """,
-    srcs = ["@cmake_src//:srcs"],
 )
 
 # Static CPython: LINKFORSHARED defaults to -export-dynamic, which is
@@ -527,6 +547,7 @@ make install
 # (the top-level configure does not forward make variables).
 stage2_autotools_build(
     name = "python-s2",
+    srcs = "@python_src//:srcs",
     configure = "@python_src//:configure",
     configure_args = [
         "--disable-shared",
@@ -539,10 +560,56 @@ stage2_autotools_build(
         "CFLAGS=-O2",
         "CPPFLAGS=-I%{OUT}/include",
         "LDFLAGS=--static -L%{OUT}/lib",
-    ] + STAGE_CC,
+    ],
     install_base = [":zlib-s2"],
     install_targets = "LINKFORSHARED=' ' install",
     make_targets = "LINKFORSHARED=' '",
-    path_trees = [":host-gcc-s2"],
-    srcs = "@python_src//:srcs",
+)
+
+# Linux-native clang + lld, built by stage 2 as an optional host
+# toolchain. make (not ninja) drives the build; the -j1 retry absorbs
+# the rare OOM-killed link on small machines.
+stage2_run(
+    name = "host-clang-s2",
+    extra_inputs = ["@llvm_src//:srcs"],
+    inputs = {
+        "LLVM_CML": "@llvm_src//:llvm/CMakeLists.txt",
+        "PYTHON": ":python-s2",
+    },
+    out_tree = True,
+    path_trees = [
+        ":host-gcc-s2",
+        ":cmake-s2",
+        ":python-s2",
+    ],
+    script = """llvmdir=$(dirname %{LLVM_CML})
+export CC="$CC_FOR_BUILD" CXX="$CXX_FOR_BUILD"
+cmake -S "$llvmdir" -B b \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=%{OUT} \
+    -DCMAKE_MAKE_PROGRAM=make \
+    '-DLLVM_ENABLE_PROJECTS=clang;lld' \
+    '-DLLVM_TARGETS_TO_BUILD=AArch64;ARM;RISCV;X86' \
+    -DCMAKE_EXE_LINKER_FLAGS=-static \
+    -DLLVM_ENABLE_ZLIB=OFF \
+    -DLLVM_ENABLE_ZSTD=OFF \
+    -DLLVM_ENABLE_LIBXML2=OFF \
+    -DLLVM_ENABLE_LIBEDIT=OFF \
+    -DLLVM_ENABLE_BINDINGS=OFF \
+    -DLLVM_INCLUDE_TESTS=OFF \
+    -DLLVM_INCLUDE_EXAMPLES=OFF \
+    -DLLVM_INCLUDE_BENCHMARKS=OFF \
+    -DLLVM_INCLUDE_DOCS=OFF \
+    -DCLANG_ENABLE_STATIC_ANALYZER=OFF \
+    -DPython3_EXECUTABLE=%{PYTHON}/bin/python3
+make -C b -j %{JOBS} clang lld llvm-ar llvm-nm llvm-objcopy llvm-strip \
+    llvm-libtool-darwin llvm-install-name-tool llvm-tblgen clang-tblgen || \
+    make -C b -j 1 clang lld llvm-ar llvm-nm llvm-objcopy llvm-strip \
+        llvm-libtool-darwin llvm-install-name-tool llvm-tblgen clang-tblgen
+make -C b install-clang install-clang-resource-headers install-lld \
+    install-llvm-ar install-llvm-ranlib install-llvm-nm install-llvm-strip \
+    install-llvm-objcopy install-llvm-libtool-darwin \
+    install-llvm-install-name-tool
+install -m 0755 b/bin/llvm-tblgen b/bin/clang-tblgen %{OUT}/bin/
+""",
 )

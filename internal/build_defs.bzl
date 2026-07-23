@@ -6,7 +6,7 @@ modes exist, selected by which attribute a target sets:
 
   - `userland` (stage 2 and above): a from-source GNU userland tree
     (bash, coreutils, sed, grep, findutils, diffutils, tar, gzip, gawk —
-    see //toolchain:userland-s2). The action executes its bash directly;
+    see //internal:userland-s2). The action executes its bash directly;
     PATH points into the tree. No prebuilt binary is among the action's
     inputs.
   - `busybox` (stage 0/1 and the userland package builds themselves): the
@@ -43,6 +43,8 @@ No genrules anywhere: genrules require the host bash. Every action here
 execs its shell directly.
 """
 
+visibility("//...")
+
 def _subst(template, substitutions):
     for key, value in substitutions.items():
         template = template.replace("%{" + key + "}", value)
@@ -73,10 +75,16 @@ SH="$SCRATCH/tools/sh"
 """
 
 _COMMON_TAIL = """if [ -e /bin/sh ] || [ -L /bin/sh ]; then
-    echo "ERROR: /bin/sh already exists in the sandbox root, so this action is" >&2
-    echo "not running in the empty hermetic sandbox. Refusing a mixed" >&2
-    echo "host/hermetic build: keep --experimental_use_hermetic_linux_sandbox" >&2
-    echo "with --spawn_strategy=linux-sandbox (see .bazelrc)." >&2
+    echo "ERROR: stage2.bzl requires Bazel's empty hermetic Linux sandbox," >&2
+    echo "but /bin/sh already exists in this action's sandbox root." >&2
+    echo "Refusing a mixed host/hermetic build." >&2
+    echo >&2
+    echo "Add this exact block to the consuming workspace's .bazelrc:" >&2
+    echo >&2
+    echo "common --enable_platform_specific_config" >&2
+    echo "build:linux --experimental_use_hermetic_linux_sandbox" >&2
+    echo "build:linux --spawn_strategy=linux-sandbox" >&2
+    echo "build:linux --sandbox_default_allow_network=false" >&2
     exit 1
 fi
 mkdir -p /bin
@@ -109,7 +117,7 @@ def _run(cmd, log, tail = "80"):
     )
 
 def _common_attrs():
-    # cfg = "exec": these are host prerequisites, and //toolchain's aliases
+    # cfg = "exec": these are host prerequisites, and //internal's aliases
     # select() on the CPU of the configuration they are analyzed in. The
     # exec configuration's platform is the host even when --platforms
     # points somewhere exotic.
@@ -127,7 +135,7 @@ def _common_attrs():
         "busybox": attr.label(
             allow_single_file = True,
             cfg = "exec",
-            default = Label("//toolchain:busybox"),
+            default = Label("//internal:busybox"),
         ),
         "musl_toolchain": attr.label(
             cfg = "exec",
@@ -218,16 +226,24 @@ def _expand_out(arg, out):
     return arg.replace("%{OUT}", "'\"$ROOT\"'/" + out.path + "'")
 
 def _make_bootstrap_impl(ctx):
-    out = ctx.actions.declare_file(ctx.label.name)
+    if ctx.attr.out_tree:
+        out = ctx.actions.declare_directory(ctx.label.name)
+    else:
+        out = ctx.actions.declare_file(ctx.label.name)
     script = _preamble(ctx, out.path + ".scratch", [])
     script += 'cd "$SCRATCH/build"\n'
     script += _run(
         '"$CONFIG_SHELL" "$ROOT/{}" --disable-nls --disable-dependency-tracking "CC=$CC_FOR_BUILD"'.format(ctx.file.configure.path),
         "configure.log",
     )
+
     # build.sh compiles make without needing an existing make.
     script += _run('"$CONFIG_SHELL" ./build.sh', "build.log")
-    script += 'cp make "$ROOT/{}"\n'.format(out.path)
+    if ctx.attr.out_tree:
+        script += 'mkdir -p "$ROOT/{}/bin"\n'.format(out.path)
+        script += 'cp make "$ROOT/{}/bin/make"\n'.format(out.path)
+    else:
+        script += 'cp make "$ROOT/{}"\n'.format(out.path)
     _run_shell(
         ctx,
         script,
@@ -243,6 +259,9 @@ make_bootstrap = rule(
     attrs = _common_attrs() | {
         "srcs": attr.label(mandatory = True),
         "configure": attr.label(mandatory = True, allow_single_file = True),
+        "out_tree": attr.bool(
+            doc = "Emit a bin/make install tree instead of a single bootstrap executable.",
+        ),
         "path_trees": attr.label_list(allow_files = True),
     },
     doc = "Bootstraps GNU make from source using only a shell and a C compiler.",
@@ -257,8 +276,10 @@ def _autotools_build_impl(ctx):
         [out.path + "/bin"],
     )
 
-    # Make the bootstrapped make available under the name `make`.
-    script += 'ln -sf "$ROOT/{}" "$SCRATCH/tools/make"\n'.format(ctx.file.make.path)
+    # Bootstrap tiers inject make independently; stage-2 userlands carry
+    # GNU make in their bin/ tree and leave this attribute unset.
+    if ctx.file.make:
+        script += 'ln -sf "$ROOT/{}" "$SCRATCH/tools/make"\n'.format(ctx.file.make.path)
 
     # Seed the install prefix with previously built trees (e.g. binutils
     # before gcc) so the result is one merged prefix, exactly as if both
@@ -282,6 +303,7 @@ def _autotools_build_impl(ctx):
         ),
         "configure.log",
     )
+
     # MAKEINFO=true must be on the make command line (not just in the
     # environment): release tarballs can carry .texi files newer than the
     # shipped .info docs, and e.g. libgloss then invokes $(MAKEINFO).
@@ -295,7 +317,8 @@ def _autotools_build_impl(ctx):
         script,
         inputs = depset(
             ctx.files.srcs + ctx.files.install_base + ctx.files.path_trees +
-            [ctx.file.configure, ctx.file.make] + _common_inputs(ctx),
+            [ctx.file.configure] +
+            ([ctx.file.make] if ctx.file.make else []) + _common_inputs(ctx),
         ),
         outputs = [out],
         mnemonic = "AutotoolsBuild",
@@ -311,7 +334,11 @@ autotools_build = rule(
         "configure_args": attr.string_list(
             doc = "Arguments for configure; %{OUT} expands to the absolute output tree path.",
         ),
-        "make": attr.label(mandatory = True, allow_single_file = True, cfg = "exec"),
+        "make": attr.label(
+            allow_single_file = True,
+            cfg = "exec",
+            doc = "Bootstrap-tier make binary; stage-2 builds use make from userland.",
+        ),
         "install_base": attr.label_list(
             allow_files = True,
             doc = "Install trees copied into the prefix before building.",
@@ -372,15 +399,15 @@ def _hermetic_run_impl(ctx):
         "OUT": '"$ROOT"/' + out.path,
         "JOBS": str(ctx.attr.jobs),
     }
-    file_inputs = []
-    for label, token in ctx.attr.files.items():
+    token_input_files = []
+    for label, token in ctx.attr.input_tokens.items():
         found = label.files.to_list()
         if len(found) != 1:
-            fail("hermetic_run.files: {} must resolve to exactly one file/tree, got {}".format(
+            fail("hermetic_run.input_tokens: {} must resolve to exactly one file/tree, got {}".format(
                 label.label,
                 len(found),
             ))
-        file_inputs.append(found[0])
+        token_input_files.append(found[0])
         substitutions[token] = '"$ROOT"/' + found[0].path
 
     script += 'cd "$SCRATCH/build"\n'
@@ -390,7 +417,7 @@ def _hermetic_run_impl(ctx):
         ctx,
         script,
         inputs = depset(
-            ctx.files.srcs + ctx.files.path_trees + file_inputs +
+            ctx.files.extra_inputs + ctx.files.path_trees + token_input_files +
             ([ctx.file.make] if ctx.file.make else []) + _common_inputs(ctx),
         ),
         outputs = [out],
@@ -406,14 +433,17 @@ hermetic_run = rule(
             mandatory = True,
             doc = "Shell body run from $SCRATCH/build after the preamble. " +
                   "%{OUT} expands to the output path, %{JOBS} to the jobs " +
-                  "count, and each `files` token to its file's path (all " +
+                  "count, and each `input_tokens` token to its input's path (all " +
                   "absolute via $ROOT).",
         ),
-        "files": attr.label_keyed_string_dict(
+        "input_tokens": attr.label_keyed_string_dict(
             allow_files = True,
-            doc = "Input files/trees exposed to the script: label -> token name.",
+            doc = "Internal label -> token mapping populated by stage2_run.",
         ),
-        "srcs": attr.label_list(allow_files = True),
+        "extra_inputs": attr.label_list(
+            allow_files = True,
+            doc = "Additional declared inputs that receive no token substitution.",
+        ),
         "out": attr.string(doc = "Output file name (default: target name)."),
         "out_tree": attr.bool(doc = "Declare the output as a directory tree."),
         "make": attr.label(allow_single_file = True, cfg = "exec"),

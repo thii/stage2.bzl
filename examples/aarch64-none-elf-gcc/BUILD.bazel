@@ -1,0 +1,11 @@
+# Example GNU AArch64 bare-metal toolchain: GCC 15.2.0 + binutils 2.45 +
+# newlib 4.5.0.
+
+load("//:defs.bzl", "stage2_gcc")
+
+package(default_visibility = ["//examples:__subpackages__"])
+
+stage2_gcc(
+    name = "aarch64-none-elf-gcc",
+    target = "aarch64-none-elf",
+)

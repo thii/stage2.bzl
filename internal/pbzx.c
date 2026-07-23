@@ -1,4 +1,4 @@
-/* pbzx: decode Apple's pbzx-wrapped pkg Payload to the raw cpio stream.
+/* Internal pbzx helper: decode Apple's wrapped pkg Payload to raw cpio.
  *
  * Format: "pbzx" magic, a big-endian u64 flags word, then chunks of
  * { u64 flags, u64 compressed_size, data }. Chunk data is either an

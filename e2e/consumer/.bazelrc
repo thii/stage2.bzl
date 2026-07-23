@@ -1,0 +1,5 @@
+common --enable_platform_specific_config
+build --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
+build:linux --experimental_use_hermetic_linux_sandbox
+build:linux --spawn_strategy=linux-sandbox
+build:linux --sandbox_default_allow_network=false

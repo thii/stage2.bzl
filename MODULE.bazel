@@ -25,12 +25,14 @@ every build prerequisite is a pinned download that runs standalone:
 
 module(
     name = "stage2.bzl",
-    version = "0.1.0",
+    version = "1.0.0",
+    bazel_compatibility = [">=9.0.0"],
 )
 
 bazel_dep(name = "platforms", version = "1.1.0")
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
 _SRC_TREE_BUILD = """filegroup(
@@ -65,7 +67,7 @@ http_archive(
 
 # GNU userland sources: bash, coreutils, sed, grep, findutils, diffutils,
 # tar and gzip (plus gawk below) are compiled by the stage-1 toolchain
-# into the from-source userland (//toolchain:userland-s2) that every
+# into the from-source userland (//internal:userland-s2) that every
 # action from stage 2 onward runs on, so no prebuilt binary reaches any
 # shipped-artifact action. The prebuilt Alpine busybox is bootstrap-only
 # (stage 0/1 and the userland package builds themselves).
@@ -174,7 +176,7 @@ http_archive(
 )
 
 # mingw-w64: Windows headers and CRT for the x86_64-w64-mingw32 cross
-# toolchain (//tools/mingw-w64-gcc).
+# toolchain (//examples/mingw-w64-gcc).
 http_archive(
     name = "mingw_w64_src",
     build_file_content = """filegroup(
@@ -192,9 +194,9 @@ exports_files([
     urls = ["https://downloads.sourceforge.net/project/mingw-w64/mingw-w64/mingw-w64-release/mingw-w64-v12.0.0.tar.bz2"],
 )
 
-# CMake, Python and LLVM: pinned for the implemented //tools/clang toolchain.
-# CMake self-bootstraps with only a C++ compiler and make; LLVM requires
-# CMake and Python 3.
+# CMake, Python and LLVM: pinned for //internal:host-clang-s2 and the
+# Darwin-hosted clang examples. CMake self-bootstraps with only a C++
+# compiler and make; LLVM requires CMake and Python 3.
 http_archive(
     name = "cmake_src",
     build_file_content = _SRC_TREE_BUILD,
@@ -211,8 +213,9 @@ http_archive(
     urls = ["https://www.python.org/ftp/python/3.12.8/Python-3.12.8.tar.xz"],
 )
 
-# LLVM 22.1.8: clang + lld for //tools/clang. The exported CMakeLists.txt
-# is how build scripts locate the source root (filegroups have no root).
+# LLVM 22.1.8: clang + lld for //internal:host-clang-s2 and the Darwin
+# examples. The exported CMakeLists.txt is how build scripts locate the
+# source root (filegroups have no root).
 http_archive(
     name = "llvm_src",
     build_file_content = """filegroup(
@@ -280,7 +283,7 @@ http_archive(
 )
 
 # Apple Command Line Tools SDK (MacOSX26.5.sdk): headers and .tbd linker
-# stubs — text, no executable code once //toolchain:macos-sdk prunes the
+# stubs — text, no executable code once //internal:macos-sdk prunes the
 # few legacy Mach-O leftovers. Served unauthenticated from Apple's
 # softwareupdate CDN; the URL is one catalog product and can rot when
 # Apple rotates generations (like the Alpine apks — bump URL + sha256
@@ -297,7 +300,7 @@ http_file(
 )
 
 # musl libc: the C library of the self-hosted stage-1/stage-2 host
-# toolchains (//toolchain:host-gcc-s1/-s2). musl builds with no kernel
+# toolchains (//internal:host-gcc-s1/-s2). musl builds with no kernel
 # headers and no tools beyond sh/make/cc.
 http_archive(
     name = "musl_src",
@@ -311,7 +314,7 @@ http_archive(
 # assembled into a single "combined tree" (the versions match
 # gcc-15.2.0/contrib/download_prerequisites). See the repository rule for
 # the pinned URLs and checksums of the individual archives.
-gcc_combined_src_repo = use_repo_rule("//toolchain:gcc_combined_repo.bzl", "gcc_combined_src_repo")
+gcc_combined_src_repo = use_repo_rule("//internal:gcc_combined_repo.bzl", "gcc_combined_src_repo")
 
 gcc_combined_src_repo(
     name = "gcc_combined_src",

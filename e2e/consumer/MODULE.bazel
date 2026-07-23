@@ -1,0 +1,28 @@
+module(name = "stage2_consumer")
+
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "stage2.bzl", version = "1.0.0")
+local_path_override(
+    module_name = "stage2.bzl",
+    path = "../..",
+)
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "hello_src",
+    build_file_content = """filegroup(
+    name = "srcs",
+    srcs = glob(["**"]),
+    visibility = ["//visibility:public"],
+)
+exports_files(["configure"])
+""",
+    sha256 = "8d99142afd92576f30b0cd7cb42a8dc6809998bc5d607d88761f512e26c7db20",
+    strip_prefix = "hello-2.12.1",
+    urls = [
+        "https://mirrors.kernel.org/gnu/hello/hello-2.12.1.tar.gz",
+        "https://ftpmirror.gnu.org/hello/hello-2.12.1.tar.gz",
+        "https://ftp.gnu.org/gnu/hello/hello-2.12.1.tar.gz",
+    ],
+)
