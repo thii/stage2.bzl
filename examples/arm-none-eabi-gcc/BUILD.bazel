@@ -2,7 +2,7 @@
 # 4.5.0. Single (default) multilib — Arm's own distribution builds the
 # rmprofile/aprofile multilib lists; widen via gcc_args if needed.
 
-load("//:defs.bzl", "stage2_gcc")
+load("@stage2.bzl", "stage2_gcc")
 
 package(default_visibility = ["//examples:__subpackages__"])
 

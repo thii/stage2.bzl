@@ -4,7 +4,7 @@
 # Deliberately narrowed for build time: single multilib instead of the
 # usual ~40-entry list, C/C++ only (no Fortran), no bundled GDB.
 
-load("//:defs.bzl", "stage2_gcc")
+load("@stage2.bzl", "stage2_gcc")
 
 package(default_visibility = ["//examples:__subpackages__"])
 

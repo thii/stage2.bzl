@@ -1,4 +1,4 @@
-load("//:defs.bzl", "stage2_run")
+load("@stage2.bzl", "stage2_run")
 load(":cross_binary.bzl", "cross_binary")
 
 # End-to-end examples: the same bare-metal sources cross-compiled by
