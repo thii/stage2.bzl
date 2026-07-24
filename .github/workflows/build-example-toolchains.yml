@@ -11,8 +11,9 @@ on:
 permissions:
   contents: read
 
-# Queue multi-hour builds so a rerun resumes one cache lineage instead of
-# racing a concurrent writer for it.
+# Linux and Windows save one complete result cache per build-input
+# fingerprint. Darwin saves one immutable snapshot per attempt so a timed-out
+# build can resume. Queue workflow runs to keep each lineage ordered.
 concurrency:
   group: build-example-toolchains
   cancel-in-progress: false
@@ -31,6 +32,8 @@ jobs:
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 360
+    env:
+      BAZEL_CACHE_SCOPE: linux-${{ matrix.arch }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
@@ -48,9 +51,19 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/stage2-repository-cache
-          key: bazel-repositories-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'internal/gcc_combined_repo.bzl') }}
+          key: bazel-repositories-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'internal/gcc_combined_repo.bzl') }}
           restore-keys: |
+            bazel-repositories-v2-${{ env.BAZEL_CACHE_SCOPE }}-
             bazel-repositories-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Restore Bazel results
+        id: bazel_cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/stage2-disk-cache
+          key: bazel-disk-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion') }}-${{ hashFiles('.bazelignore', '.bazelrc', '.bazelversion', 'BUILD.bazel', 'MODULE.bazel', 'MODULE.bazel.lock', 'stage2.bzl', 'internal/**', 'trees/**', 'examples/**', '.github/workflows/build-example-toolchains.yml') }}
+          restore-keys: |
+            bazel-disk-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion') }}-
 
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.19.0
@@ -61,7 +74,15 @@ jobs:
           bazel build \
             --jobs=1 \
             --repository_cache="$RUNNER_TEMP/stage2-repository-cache" \
+            --disk_cache="$RUNNER_TEMP/stage2-disk-cache" \
             //examples/riscv-none-elf-gcc:dist
+
+      - name: Save Bazel results
+        if: ${{ success() && steps.bazel_cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/stage2-disk-cache
+          key: ${{ steps.bazel_cache.outputs.cache-primary-key }}
 
       - name: Upload Linux toolchain
         uses: actions/upload-artifact@v6
@@ -76,6 +97,8 @@ jobs:
     name: Windows (x86_64)
     runs-on: ubuntu-24.04
     timeout-minutes: 360
+    env:
+      BAZEL_CACHE_SCOPE: windows-x86_64
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
@@ -93,9 +116,19 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/stage2-repository-cache
-          key: bazel-repositories-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'internal/gcc_combined_repo.bzl') }}
+          key: bazel-repositories-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'internal/gcc_combined_repo.bzl') }}
           restore-keys: |
+            bazel-repositories-v2-${{ env.BAZEL_CACHE_SCOPE }}-
             bazel-repositories-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Restore Bazel results
+        id: bazel_cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/stage2-disk-cache
+          key: bazel-disk-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion') }}-${{ hashFiles('.bazelignore', '.bazelrc', '.bazelversion', 'BUILD.bazel', 'MODULE.bazel', 'MODULE.bazel.lock', 'stage2.bzl', 'internal/**', 'trees/**', 'examples/**', '.github/workflows/build-example-toolchains.yml') }}
+          restore-keys: |
+            bazel-disk-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion') }}-
 
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.19.0
@@ -105,8 +138,16 @@ jobs:
           bazel build \
             --jobs=1 \
             --repository_cache="$RUNNER_TEMP/stage2-repository-cache" \
+            --disk_cache="$RUNNER_TEMP/stage2-disk-cache" \
             //examples/riscv-none-elf-gcc-w64:dist \
             //examples/riscv-none-elf-gcc-w64:riscv-none-elf-gcc-w64-pe-check
+
+      - name: Save Bazel results
+        if: ${{ success() && steps.bazel_cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/stage2-disk-cache
+          key: ${{ steps.bazel_cache.outputs.cache-primary-key }}
 
       - name: Upload Windows toolchain
         uses: actions/upload-artifact@v6
@@ -134,6 +175,8 @@ jobs:
             file: bazel-bin/examples/clang/clang-darwin-arm64.tar.gz
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 360
+    env:
+      BAZEL_CACHE_SCOPE: darwin-${{ matrix.arch }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
@@ -151,36 +194,35 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/stage2-repository-cache
-          key: bazel-repositories-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'internal/gcc_combined_repo.bzl') }}
+          key: bazel-repositories-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'internal/gcc_combined_repo.bzl') }}
           restore-keys: |
+            bazel-repositories-v2-${{ env.BAZEL_CACHE_SCOPE }}-
             bazel-repositories-${{ runner.os }}-${{ runner.arch }}-
 
-      # A cold darwin chain (stage 2, then a native LLVM, then a Canadian
-      # LLVM) does not fit one 6-hour hosted job, so completed actions
-      # persist in a Bazel disk cache carried by the Actions cache and
-      # each run resumes where the last one stopped — re-run the workflow
-      # until the job goes green with an artifact. The run_id in the key
-      # forces a save every run; restore-keys picks the newest lineage.
-      # This does place SDK-derived trees in the repo-private Actions
-      # cache (10 GB, LRU-evicted), unlike the pinned-download cache
-      # policy on the other jobs.
+      # A cold Darwin chain (stage 2, then a native LLVM, then a Canadian
+      # LLVM) does not fit one 6-hour hosted job. A run- and attempt-specific
+      # key saves partial progress, while restore-keys resumes the newest
+      # cache in this target's lineage.
       - name: Restore Bazel results
         id: bazel_cache
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/stage2-disk-cache
-          key: bazel-disk-darwin-${{ matrix.arch }}-${{ github.run_id }}
+          key: bazel-disk-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion') }}-${{ hashFiles('.bazelignore', '.bazelrc', '.bazelversion', 'BUILD.bazel', 'MODULE.bazel', 'MODULE.bazel.lock', 'stage2.bzl', 'internal/**', 'trees/**', 'examples/**', '.github/workflows/build-example-toolchains.yml') }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
+            bazel-disk-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion') }}-${{ hashFiles('.bazelignore', '.bazelrc', '.bazelversion', 'BUILD.bazel', 'MODULE.bazel', 'MODULE.bazel.lock', 'stage2.bzl', 'internal/**', 'trees/**', 'examples/**', '.github/workflows/build-example-toolchains.yml') }}-
+            bazel-disk-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion') }}-
             bazel-disk-darwin-${{ matrix.arch }}-
 
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.19.0
 
       # timeout(1) interrupts Bazel cleanly before the job deadline so
-      # the cache post-steps still run (a job-level timeout cancels
-      # them). Exit 124 — timed out, partial progress cached — is
-      # success for this step; a real build error still fails it.
+      # the cache save step still runs. Exit 124 — timed out, partial
+      # progress cached — is success for this step; a real build error
+      # still fails it.
       - name: Build Darwin toolchain
+        id: build
         run: |
           set +e
           timeout --signal=INT 320m bazel build \
@@ -196,11 +238,8 @@ jobs:
           fi
           exit "$build_status"
 
-      # The combined cache action skips its post-save hook after a failed
-      # build. Save explicitly so successful prerequisite actions survive
-      # both ordinary failures and the controlled timeout above.
       - name: Save Bazel results
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (steps.build.outcome == 'success' || steps.build.outcome == 'failure') }}
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/stage2-disk-cache
