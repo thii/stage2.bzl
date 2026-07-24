@@ -1,10 +1,7 @@
 # API reference
 
-Load supported symbols from the repository entry point:
-
-```starlark
-load("@stage2.bzl", "stage2_run")
-```
+Load supported symbols from the repository entry point. Each example includes
+the symbols it needs.
 
 Only the parameters documented here are supported. Targets under `//internal`
 and `//examples` are implementation details.
@@ -16,6 +13,8 @@ and `//examples` are implementation details.
 Runs a conventional `configure`, `make`, and `make install` build.
 
 ```starlark
+load("@stage2.bzl", "stage2_autotools_build")
+
 stage2_autotools_build(
     name = name,
     srcs = srcs,
@@ -54,6 +53,8 @@ named `name`.
 Runs a shell script in the hermetic sandbox.
 
 ```starlark
+load("@stage2.bzl", "stage2_run")
+
 stage2_run(
     name = name,
     script = script,
@@ -90,6 +91,8 @@ overwrite the built-ins.
 ### `stage2_tree_merge`
 
 ```starlark
+load("@stage2.bzl", "stage2_tree_merge")
+
 stage2_tree_merge(
     name = name,
     trees = trees,
@@ -103,6 +106,8 @@ earlier ones. The userland must provide `cp`.
 ### `stage2_dist_tarball`
 
 ```starlark
+load("@stage2.bzl", "stage2_dist_tarball")
+
 stage2_dist_tarball(
     name = name,
     tree = tree,
@@ -120,6 +125,8 @@ userland must provide `cp`, `find`, `touch`, `tar`, and `gzip`.
 `stage2_gcc_w64` builds its Windows-hosted variant.
 
 ```starlark
+load("@stage2.bzl", "stage2_gcc", "stage2_gcc_w64")
+
 stage2_gcc(
     name,
     target,
@@ -193,6 +200,19 @@ their provenance.
 These constants are string lists intended for composing GCC-family builds.
 `STAGE_CC` and `BUILD_TRIPLE_ARG` are `select()` values that choose such a list
 for the configured CPU.
+
+```starlark
+load(
+    "@stage2.bzl",
+    "BINUTILS_ARGS",
+    "BUILD_TRIPLE_ARG",
+    "GCC_NEWLIB_ARGS",
+    "MINGW_HOST_CC",
+    "OPT_FLAGS",
+    "STAGE_CC",
+    "W64_OPT_FLAGS",
+)
+```
 
 ### `STAGE_CC`
 
