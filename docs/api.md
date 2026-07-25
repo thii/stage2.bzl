@@ -237,6 +237,9 @@ bin/mkdir
 bin/ln
 ```
 
+Every action sets `HOME` and `TMPDIR` to its scratch tree, uses umask `022`,
+and fixes `LC_ALL=C`, `TZ=UTC`, `SOURCE_DATE_EPOCH=0`, and `ZERO_AR_DATE=1`.
+
 Rules may need more tools:
 
 | Rule | Additional userland tools |
@@ -320,6 +323,7 @@ LDFLAGS=--static
 --disable-gprofng
 --disable-shared
 --enable-static
+--enable-deterministic-archives
 --disable-dependency-tracking
 ```
 

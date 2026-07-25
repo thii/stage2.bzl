@@ -208,9 +208,17 @@ is not proof.
 - Stage 1: the compiler seed, BusyBox, and stage-0 Make build the first static
   binutils/musl/GCC toolchain. That compiler then builds the source-based
   userland, while BusyBox and stage-0 Make still drive the actions.
-- Stage 2: the stage-1 compiler and source-built userland rebuild static
-  binutils, musl, and GCC. The resulting toolchain is exposed as
-  `@stage2.bzl//trees:cc` and drives later builds.
+- Stage 2: the stage-1 compiler and first source-built userland rebuild static
+  binutils, musl, and GCC. That toolchain rebuilds the userland, then one
+  closing toolchain pass links against the rebuilt runtime. The closing
+  compiler and userland trees drive later builds.
+
+CI repeats the bootstrap from the musl.cc and Zig seeds on `x86_64` and
+`aarch64`. Within each architecture, the closing compiler, userland, and GNU
+Hello trees must have identical paths, modes, symlinks, and file bytes; the
+raw Hello output must also be byte-identical.
+This detects seed-specific influence; it does not validate the source archives,
+Bazel, or the host kernel, or rule out a compromise shared by both seeds.
 
 ## Caveats
 

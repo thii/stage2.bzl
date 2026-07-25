@@ -194,14 +194,14 @@
     "@@stage2.bzl+//:extensions.bzl%compiler_seeds": {
       "general": {
         "bzlTransitiveDigest": "BO8I2voe9YS+hLGdAT9HbTA2vh6fFno+L6Bo84SiM9M=",
-        "usagesDigest": "ulAQBUkULSXh6lgIMv2NElEs9S/yI0Qt7AITjlJ9uxY=",
+        "usagesDigest": "7AF39mExAwowmM9aEXVjLuV7G8bZOIa86rbRvWgLkII=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "stage2_compiler_seeds": {
             "repoRuleId": "@@stage2.bzl+//:extensions.bzl%_compiler_seed_config_repo",
             "attributes": {
-              "aarch64": "@@//:zig_compiler_seed_aarch64",
-              "x86_64": "@@//:custom_compiler_seed"
+              "aarch64": "@@//:compiler_seed_aarch64",
+              "x86_64": "@@//:compiler_seed_x86_64"
             }
           }
         }

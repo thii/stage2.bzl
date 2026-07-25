@@ -5,33 +5,59 @@ load(
     "stage2_run",
 )
 
+config_setting(
+    name = "use_muslcc_seed",
+    define_values = {"compiler_seed": "muslcc"},
+)
+
+config_setting(
+    name = "use_zig_seed",
+    define_values = {"compiler_seed": "zig"},
+)
+
+alias(
+    name = "compiler_seed_x86_64",
+    actual = select(
+        {
+            ":use_muslcc_seed": "@stage2.bzl//internal:default_compiler_seed_x86_64",
+            ":use_zig_seed": ":zig_compiler_seed_x86_64",
+        },
+        no_match_error = "set --define=compiler_seed to muslcc or zig",
+    ),
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "compiler_seed_aarch64",
+    actual = select(
+        {
+            ":use_muslcc_seed": "@stage2.bzl//internal:default_compiler_seed_aarch64",
+            ":use_zig_seed": ":zig_compiler_seed_aarch64",
+        },
+        no_match_error = "set --define=compiler_seed to muslcc or zig",
+    ),
+    visibility = ["//visibility:public"],
+)
+
 stage2_compiler_seed(
-    name = "custom_compiler_seed",
+    name = "zig_compiler_seed_x86_64",
     env = {
-        "AR": "%{TOOLS}/ar",
-        "CC": "%{COMPILER}/bin/x86_64-linux-musl-cc -static",
-        "CXX": "%{COMPILER}/bin/c++ -static",
-        "LD": "%{TOOLS}/ld",
-        "NM": "%{TOOLS}/nm",
-        "RANLIB": "%{TOOLS}/ranlib",
-        "STRIP": "%{TOOLS}/strip",
+        "AR": "%{ZIG}/zig ar",
+        "CC": "%{ZIG}/zig cc -target x86_64-linux-musl -static",
+        "CXX": "%{ZIG}/zig c++ --driver-mode=g++ -target x86_64-linux-musl -static",
+        "LD": "%{ZIG}/zig ld.lld",
+        "RANLIB": "%{ZIG}/zig ranlib",
+        "ZIG_GLOBAL_CACHE_DIR": "%{ZIG}/.cache/global",
+        "ZIG_LOCAL_CACHE_DIR": "%{ZIG}/.cache/local",
     },
-    inputs = ["@custom_compiler_seed_x86_64//:all"],
-    path = [
-        "%{COMPILER}/bin",
-        "%{TOOLS}",
-    ],
+    inputs = ["@zig_compiler_seed_x86_64//:all"],
+    path = ["%{ZIG}"],
     roots = {
-        "COMPILER": (
-            "@custom_compiler_seed_x86_64//:bin/x86_64-linux-musl-cc",
-            "bin/x86_64-linux-musl-cc",
-        ),
-        "TOOLS": (
-            "@custom_compiler_seed_x86_64//:bin/ar",
-            "ar",
+        "ZIG": (
+            "@zig_compiler_seed_x86_64//:zig",
+            "zig",
         ),
     },
-    symlinks = {"%{COMPILER}/usr": "."},
 )
 
 stage2_compiler_seed(

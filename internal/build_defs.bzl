@@ -6,10 +6,10 @@ modes exist, selected by which attribute a target sets:
 
   - `userland` (stage 2 and above): a from-source GNU userland tree
     (bash, coreutils, sed, grep, findutils, diffutils, tar, gzip, gawk —
-    see //internal:userland-s2). The action executes its bash directly;
+    see //internal:userland-s2-final). The action executes its bash directly;
     PATH points into the tree. No prebuilt binary is among the action's
     inputs.
-  - `busybox` (stage 0/1 and the userland package builds themselves): the
+  - `busybox` (stage 0/1 and the first userland package builds): the
     prebuilt static Alpine busybox, exec'd directly as `sh`, with a
     symlink farm of its applets on PATH. This is the irreducible
     bootstrap shell: building a shell from source needs a shell.
@@ -32,6 +32,8 @@ Common machinery for both modes:
     the shebang-executed install-sh under busybox; the GCC/binutils
     top-level configure does not forward VAR=VALUE arguments to
     sub-configures, but environment variables pass through).
+  - Locale, timezone, source epoch, archive dates, and umask are fixed so
+    they cannot leak host or invocation state into build outputs.
 
 Every action runs from the same absolute path (/execroot/_main inside the
 hermetic sandbox), so absolute paths configure bakes into one stage's
@@ -93,6 +95,8 @@ mkdir -p /bin
 ln -sf "$SH" /bin/sh
 export SHELL="$SH" CONFIG_SHELL="$SH"
 export HOME="$SCRATCH" TMPDIR="$SCRATCH/tmp"
+export LC_ALL=C TZ=UTC SOURCE_DATE_EPOCH=0 ZERO_AR_DATE=1
+umask 022
 export MKDIR_P="%{bindir}/mkdir -p" ac_cv_path_mkdir="%{bindir}/mkdir"
 export INSTALL="%{bindir}/install -c" MAKEINFO=true
 export CC_FOR_BUILD="%{build_cc}" CXX_FOR_BUILD="%{build_cxx}"

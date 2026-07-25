@@ -109,6 +109,7 @@ BINUTILS_ARGS = [
     "--disable-gprofng",
     "--disable-shared",
     "--enable-static",
+    "--enable-deterministic-archives",
     "--disable-dependency-tracking",
 ]
 

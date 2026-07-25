@@ -10,17 +10,31 @@ local_path_override(
 compiler_seeds = use_extension("@stage2.bzl//:extensions.bzl", "compiler_seeds")
 compiler_seeds.seed(
     arch = "x86_64",
-    target = "//:custom_compiler_seed",
+    target = "//:compiler_seed_x86_64",
 )
 compiler_seeds.seed(
     arch = "aarch64",
-    target = "//:zig_compiler_seed_aarch64",
+    target = "//:compiler_seed_aarch64",
 )
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
-# Zig supplies the complete hosted static C/C++ environment. Its ar, ranlib,
-# and ld.lld subcommands are sufficient to build the stage-1 GNU binutils tree.
+# Zig ships the static compiler, linker, musl sysroot, and runtime needed by
+# the seed contract; its ar and ranlib subcommands bootstrap GNU binutils.
+http_archive(
+    name = "zig_compiler_seed_x86_64",
+    build_file_content = """filegroup(
+    name = "all",
+    srcs = ["zig"] + glob(["lib/**"]),
+    visibility = ["//visibility:public"],
+)
+exports_files(["zig"])
+""",
+    sha256 = "70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00",
+    strip_prefix = "zig-x86_64-linux-0.16.0",
+    urls = ["https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz"],
+)
+
 http_archive(
     name = "zig_compiler_seed_aarch64",
     build_file_content = """filegroup(
@@ -33,35 +47,6 @@ exports_files(["zig"])
     sha256 = "ea4b09bfb22ec6f6c6ceac57ab63efb6b46e17ab08d21f69f3a48b38e1534f17",
     strip_prefix = "zig-aarch64-linux-0.16.0",
     urls = ["https://ziglang.org/download/0.16.0/zig-aarch64-linux-0.16.0.tar.xz"],
-)
-
-# Deliberately differs from stage2.bzl's built-in GCC 11.2.1 seed.
-http_archive(
-    name = "custom_compiler_seed_x86_64",
-    build_file_content = """filegroup(
-    name = "all",
-    srcs = glob(
-        [
-            "bin/**",
-            "include/**",
-            "lib/**",
-            "libexec/**",
-            "x86_64-linux-musl/**",
-        ],
-        allow_empty = True,
-    ),
-    visibility = ["//visibility:public"],
-)
-exports_files([
-    "bin/ar",
-    "bin/x86_64-linux-musl-cc",
-])
-""",
-    sha256 = "66163e6ab875fb35e59f6920f6c1acd2ccb335ac8b6142da698f4893c3319439",
-    strip_prefix = "x86_64-linux-musl-native",
-    urls = [
-        "https://download.wireguard.com/qemu-test/toolchains/20240917/x86_64-linux-musl-native.tgz",
-    ],
 )
 
 http_archive(

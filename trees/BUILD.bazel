@@ -2,18 +2,18 @@ package(default_visibility = ["//visibility:public"])
 
 alias(
     name = "cc",
-    actual = "//internal:host-gcc-s2",
+    actual = "//internal:host-gcc-s2-final",
 )
 
 alias(
     name = "default_userland",
-    actual = "//internal:userland-s2",
+    actual = "//internal:userland-s2-final",
 )
 
 [
     alias(
         name = name,
-        actual = "//internal:" + name + "-s2",
+        actual = "//internal:" + name + "-s2-final",
     )
     for name in [
         "bash",
