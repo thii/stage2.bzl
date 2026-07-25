@@ -1,3 +1,6 @@
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["stage2.bzl"])
+exports_files([
+    "extensions.bzl",
+    "stage2.bzl",
+])

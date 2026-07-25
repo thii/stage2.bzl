@@ -1,12 +1,14 @@
 # stage2.bzl
 
-stage2.bzl is a Bazel rules library for building software from source in an
-empty Linux sandbox. It provides a source-built compiler, shell, userland, and
-common build tools.
+stage2.bzl is primarily for bootstrapping compilers and build tools from source
+in an empty Linux sandbox. It provides a source-built compiler, shell,
+userland, and common build tools; it can also drive conventional package
+builds.
 
 From stage 2 onward, library-owned actions use no prebuilt executable as
-build machinery. The complete bootstrap is not seedless: a musl.cc GCC and
-Alpine BusyBox are used below that boundary.
+build machinery. The complete bootstrap is not seedless: a configurable
+compiler seed (musl.cc GCC by default) and Alpine BusyBox are used below that
+boundary.
 
 ## Requirements and setup
 
@@ -37,8 +39,9 @@ Remote execution is not supported.
 
 ## Quickstart
 
-Build GNU Hello through its normal `configure`, `make`, and `make install`
-flow. Add its pinned source archive to `MODULE.bazel`:
+The intended workload is a compiler or build tool; GNU Hello is a compact
+example of the same `configure`, `make`, and `make install` flow. Add its
+pinned source archive to `MODULE.bazel`:
 
 ```starlark
 http_archive = use_repo_rule(
@@ -120,6 +123,58 @@ Load supported symbols from `@stage2.bzl`. Other macros merge trees, create
 distribution archives, and build GCC/newlib cross toolchains. Reusable
 filesystem trees are public under `@stage2.bzl//trees`.
 
+## Compiler seeds
+
+The default compiler seed is musl.cc GCC 11.2.1. The root module may select a
+different complete, static C/C++ compiler seed for either supported
+architecture. Fetch the bundle with `http_archive`, then describe its files and
+commands in a BUILD file:
+
+```starlark
+load("@stage2.bzl", "stage2_compiler_seed")
+
+stage2_compiler_seed(
+    name = "my_seed",
+    inputs = ["@my_muslcc//:all"],
+    roots = {
+        "SEED": ("@my_muslcc//:bin/gcc", "bin/gcc"),
+    },
+    path = ["%{SEED}/bin"],
+    env = {
+        "CC": "%{SEED}/bin/gcc -static",
+        "CXX": "%{SEED}/bin/g++ -static",
+    },
+    symlinks = {"%{SEED}/usr": "."},
+)
+```
+
+Then select it in `MODULE.bazel`:
+
+```starlark
+compiler_seeds = use_extension(
+    "@stage2.bzl//:extensions.bzl",
+    "compiler_seeds",
+)
+compiler_seeds.seed(
+    arch = "x86_64",
+    target = "//:my_seed",
+)
+```
+
+An unspecified architecture keeps the default seed. The selected bundle must
+be self-contained: its commands cannot rely on host executables or libraries,
+and they must compile and link static C and C++ programs. A seed may combine
+several input trees and named roots.
+
+For example, the
+[Hermetic LLVM minimal release](https://github.com/hermeticbuild/hermetic-llvm/releases/tag/llvm-23.1.0-rc1-1)
+provides static Clang and LLD executables, but no libc, CRT objects, compiler
+runtime, or C++ runtime. “Static” describes the LLVM executables themselves,
+not a complete target environment. The archive cannot serve as a seed by
+itself; combine it with a complete static sysroot/runtime and describe both
+roots. Exact Clang target, sysroot, linker, and runtime flags depend on that
+companion bundle.
+
 ## Userlands
 
 The default userland contains Bash, coreutils, sed, grep, findutils, diffutils,
@@ -149,8 +204,8 @@ is not proof.
 
 ## Trust boundary
 
-- Stage 0: the downloaded musl.cc compiler and BusyBox build GNU Make.
-- Stage 1: musl.cc, BusyBox, and stage-0 Make build the first static
+- Stage 0: the selected compiler seed and BusyBox build GNU Make.
+- Stage 1: the compiler seed, BusyBox, and stage-0 Make build the first static
   binutils/musl/GCC toolchain. That compiler then builds the source-based
   userland, while BusyBox and stage-0 Make still drive the actions.
 - Stage 2: the stage-1 compiler and source-built userland rebuild static
@@ -159,9 +214,11 @@ is not proof.
 
 ## Caveats
 
-stage2.bzl wraps each upstream build in a coarse shell action. This favors
-auditable tool provenance, hermetic correctness, and compatibility with
-conventional source builds, but gives up much of Bazel's native integration:
+This project is mostly for bootstrapping compilers and build tools. Prefer
+Bazel-native rules for ordinary application builds that need fine-grained
+incrementality and language integration. stage2.bzl wraps each upstream build
+in a coarse shell action, favoring auditable tool provenance, hermetic
+correctness, and compatibility with conventional source builds:
 
 - Changing any input reruns the whole action. Bazel cannot cache or schedule
   individual compilations; `make` or the script controls internal parallelism.

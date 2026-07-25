@@ -6,6 +6,75 @@ the symbols it needs.
 Only the parameters documented here are supported. Targets under `//internal`
 and `//examples` are implementation details.
 
+## Compiler seed
+
+### `stage2_compiler_seed`
+
+Describes the complete prebuilt compiler bundle used only by stage-0 and
+stage-1 bootstrap actions.
+
+```starlark
+load("@stage2.bzl", "stage2_compiler_seed")
+
+stage2_compiler_seed(
+    name = name,
+    inputs = inputs,
+    roots = {
+        "TOKEN": (anchor, "path/from/root/to/anchor"),
+    },
+    env = {
+        "CC": "%{TOKEN}/path/to/cc -static",
+        "CXX": "%{TOKEN}/path/to/cxx -static",
+    },
+    path = [],
+    symlinks = {},
+)
+```
+
+- `inputs` contains every executable, header, library, CRT object, and support
+  file needed to compile and statically link hosted C and C++ programs.
+- `roots` maps an uppercase token to an anchor label and that file's path
+  relative to the intended root. Each anchor must provide exactly one file.
+  Each token expands through a stable scratch-local copy, keeping repository
+  names out of compiler commands. Use `"."` as the relative path when the
+  anchor itself is a directory artifact.
+- `env` maps environment names to values containing root tokens. `CC` and
+  `CXX` are required; variables such as `AR`, `RANLIB`, `NM`, and `LD` may be
+  added for non-GCC bundles.
+- `path` adds tokenized directories ahead of the BusyBox fallback on the
+  bootstrap `PATH`.
+- `symlinks` recreates links that cannot be declared as Bazel inputs. Keys are
+  tokenized paths inside those scratch copies and values are literal link
+  targets. The default musl.cc seed uses `{"%{SEED}/usr": "."}` for its cyclic
+  `usr -> .` link.
+
+The target is public by default so the extension-generated selection
+repository can reference it.
+
+Select a target for one or both host architectures from the root
+`MODULE.bazel`:
+
+```starlark
+compiler_seeds = use_extension(
+    "@stage2.bzl//:extensions.bzl",
+    "compiler_seeds",
+)
+compiler_seeds.seed(
+    arch = "x86_64",
+    target = "//bootstrap:compiler_seed",
+)
+```
+
+Only tags from the root module are honored; tags in dependencies are ignored.
+`arch` accepts `x86_64` or `aarch64`; an architecture without a root tag
+retains the built-in musl.cc GCC 11.2.1 seed. Duplicate root selections are
+rejected.
+
+The compiler commands must run natively on the selected Linux architecture
+without relying on host executables or libraries. They must produce static
+configure tests and build-time programs. A static compiler executable alone is
+insufficient: the bundle also needs a compatible C/C++ sysroot and runtime.
+
 ## Build macros
 
 ### `stage2_autotools_build`

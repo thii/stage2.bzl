@@ -51,7 +51,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/stage2-repository-cache
-          key: bazel-repositories-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'internal/gcc_combined_repo.bzl') }}
+          key: bazel-repositories-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'extensions.bzl', 'internal/gcc_combined_repo.bzl') }}
           restore-keys: |
             bazel-repositories-v2-${{ env.BAZEL_CACHE_SCOPE }}-
             bazel-repositories-${{ runner.os }}-${{ runner.arch }}-
@@ -61,7 +61,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/stage2-disk-cache
-          key: bazel-disk-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion') }}-${{ hashFiles('.bazelignore', '.bazelrc', '.bazelversion', 'BUILD.bazel', 'MODULE.bazel', 'MODULE.bazel.lock', 'stage2.bzl', 'internal/**', 'trees/**', 'examples/**', '.github/workflows/build-example-toolchains.yml') }}
+          key: bazel-disk-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion') }}-${{ hashFiles('.bazelignore', '.bazelrc', '.bazelversion', 'BUILD.bazel', 'MODULE.bazel', 'MODULE.bazel.lock', 'extensions.bzl', 'stage2.bzl', 'internal/**', 'trees/**', 'examples/**', '.github/workflows/build-example-toolchains.yml') }}
           restore-keys: |
             bazel-disk-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion') }}-
 
@@ -116,7 +116,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/stage2-repository-cache
-          key: bazel-repositories-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'internal/gcc_combined_repo.bzl') }}
+          key: bazel-repositories-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'extensions.bzl', 'internal/gcc_combined_repo.bzl') }}
           restore-keys: |
             bazel-repositories-v2-${{ env.BAZEL_CACHE_SCOPE }}-
             bazel-repositories-${{ runner.os }}-${{ runner.arch }}-
@@ -126,7 +126,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/stage2-disk-cache
-          key: bazel-disk-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion') }}-${{ hashFiles('.bazelignore', '.bazelrc', '.bazelversion', 'BUILD.bazel', 'MODULE.bazel', 'MODULE.bazel.lock', 'stage2.bzl', 'internal/**', 'trees/**', 'examples/**', '.github/workflows/build-example-toolchains.yml') }}
+          key: bazel-disk-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion') }}-${{ hashFiles('.bazelignore', '.bazelrc', '.bazelversion', 'BUILD.bazel', 'MODULE.bazel', 'MODULE.bazel.lock', 'extensions.bzl', 'stage2.bzl', 'internal/**', 'trees/**', 'examples/**', '.github/workflows/build-example-toolchains.yml') }}
           restore-keys: |
             bazel-disk-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion') }}-
 
@@ -194,7 +194,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/stage2-repository-cache
-          key: bazel-repositories-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'internal/gcc_combined_repo.bzl') }}
+          key: bazel-repositories-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'extensions.bzl', 'internal/gcc_combined_repo.bzl') }}
           restore-keys: |
             bazel-repositories-v2-${{ env.BAZEL_CACHE_SCOPE }}-
             bazel-repositories-${{ runner.os }}-${{ runner.arch }}-
@@ -208,9 +208,9 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/stage2-disk-cache
-          key: bazel-disk-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion') }}-${{ hashFiles('.bazelignore', '.bazelrc', '.bazelversion', 'BUILD.bazel', 'MODULE.bazel', 'MODULE.bazel.lock', 'stage2.bzl', 'internal/**', 'trees/**', 'examples/**', '.github/workflows/build-example-toolchains.yml') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: bazel-disk-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion') }}-${{ hashFiles('.bazelignore', '.bazelrc', '.bazelversion', 'BUILD.bazel', 'MODULE.bazel', 'MODULE.bazel.lock', 'extensions.bzl', 'stage2.bzl', 'internal/**', 'trees/**', 'examples/**', '.github/workflows/build-example-toolchains.yml') }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            bazel-disk-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion') }}-${{ hashFiles('.bazelignore', '.bazelrc', '.bazelversion', 'BUILD.bazel', 'MODULE.bazel', 'MODULE.bazel.lock', 'stage2.bzl', 'internal/**', 'trees/**', 'examples/**', '.github/workflows/build-example-toolchains.yml') }}-
+            bazel-disk-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion') }}-${{ hashFiles('.bazelignore', '.bazelrc', '.bazelversion', 'BUILD.bazel', 'MODULE.bazel', 'MODULE.bazel.lock', 'extensions.bzl', 'stage2.bzl', 'internal/**', 'trees/**', 'examples/**', '.github/workflows/build-example-toolchains.yml') }}-
             bazel-disk-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion') }}-
             bazel-disk-darwin-${{ matrix.arch }}-
 

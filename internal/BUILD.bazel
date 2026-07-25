@@ -1,6 +1,7 @@
 # Private implementation graph; public aliases live in //trees.
 
 load(":build_defs.bzl", "autotools_build", "make_bootstrap", "tree_merge")
+load(":compiler_seed.bzl", "stage2_compiler_seed")
 load(":stage2.bzl", "stage2_autotools_build", "stage2_run")
 
 package(default_visibility = [":internal_consumers"])
@@ -33,23 +34,48 @@ alias(
     visibility = ["//visibility:public"],
 )
 
-alias(
-    name = "musl_files",
-    actual = select(
-        {
-            "@platforms//cpu:aarch64": "@musl_toolchain_linux_arm64//:all",
-            "@platforms//cpu:x86_64": "@musl_toolchain_linux_x64//:all",
-        },
-        no_match_error = _NO_MATCH,
-    ),
+stage2_compiler_seed(
+    name = "default_compiler_seed_aarch64",
+    env = {
+        "CC": "%{SEED}/bin/gcc -static",
+        "CXX": "%{SEED}/bin/g++ -static",
+    },
+    inputs = ["@musl_toolchain_linux_arm64//:all"],
+    path = ["%{SEED}/bin"],
+    roots = {
+        "SEED": (
+            "@musl_toolchain_linux_arm64//:bin/gcc",
+            "bin/gcc",
+        ),
+    },
+    symlinks = {"%{SEED}/usr": "."},
+    visibility = ["//visibility:public"],
+)
+
+stage2_compiler_seed(
+    name = "default_compiler_seed_x86_64",
+    env = {
+        "CC": "%{SEED}/bin/gcc -static",
+        "CXX": "%{SEED}/bin/g++ -static",
+    },
+    inputs = ["@musl_toolchain_linux_x64//:all"],
+    path = ["%{SEED}/bin"],
+    roots = {
+        "SEED": (
+            "@musl_toolchain_linux_x64//:bin/gcc",
+            "bin/gcc",
+        ),
+    },
+    symlinks = {"%{SEED}/usr": "."},
+    visibility = ["//visibility:public"],
 )
 
 alias(
-    name = "musl_gcc",
+    name = "compiler_seed",
     actual = select(
         {
-            "@platforms//cpu:aarch64": "@musl_toolchain_linux_arm64//:bin/gcc",
-            "@platforms//cpu:x86_64": "@musl_toolchain_linux_x64//:bin/gcc",
+            "@platforms//cpu:aarch64": "@stage2_compiler_seeds//:aarch64",
+            "@platforms//cpu:x86_64": "@stage2_compiler_seeds//:x86_64",
         },
         no_match_error = _NO_MATCH,
     ),
@@ -113,11 +139,6 @@ _TOOL_SUBDIR = select(
     no_match_error = _NO_MATCH,
 )
 
-_SEED_CC = [
-    "CC=gcc -static",
-    "CXX=g++ -static",
-]
-
 _OPT_FLAGS = [
     "CFLAGS=-O2",
     "CXXFLAGS=-O2",
@@ -168,52 +189,47 @@ _HOST_GCC_ARGS = [
 make_bootstrap(
     name = "make",
     srcs = "@make_src//:srcs",
+    compiler_seed = ":compiler_seed",
     configure = "@make_src//:configure",
-    musl_gcc = ":musl_gcc",
-    musl_toolchain = ":musl_files",
 )
 
 # ---------------------------------------------------------------------------
-# Stage 1: host toolchain compiled by the PREBUILT musl.cc seed.
-# This is the only place the seed compiler is ever used (besides :make).
+# Stage 1: host toolchain compiled by the selected prebuilt compiler seed.
+# This is the only place the seed compiler is used (besides :make).
 # ---------------------------------------------------------------------------
 
 autotools_build(
     name = "host-binutils-s1",
     srcs = "@binutils_src//:srcs",
+    compiler_seed = ":compiler_seed",
     configure = "@binutils_src//:configure",
-    configure_args = _BINUTILS_ARGS + _SEED_CC + _OPT_FLAGS + _MUSL_TARGET,
+    configure_args = _BINUTILS_ARGS + _OPT_FLAGS + _MUSL_TARGET,
     make = ":make",
-    musl_gcc = ":musl_gcc",
-    musl_toolchain = ":musl_files",
 )
 
 autotools_build(
     name = "musl-s1",
     srcs = "@musl_src//:srcs",
+    compiler_seed = ":compiler_seed",
     configure = "@musl_src//:configure",
     configure_args = [
         "--disable-shared",
-        "CC=gcc -static",
         "CFLAGS=-O2",
     ],
     make = ":make",
-    musl_gcc = ":musl_gcc",
-    musl_toolchain = ":musl_files",
 )
 
 autotools_build(
     name = "host-gcc-s1",
     srcs = "@gcc_combined_src//:srcs",
+    compiler_seed = ":compiler_seed",
     configure = "@gcc_combined_src//:configure",
-    configure_args = _HOST_GCC_ARGS + _SEED_CC + _OPT_FLAGS + _MUSL_TARGET,
+    configure_args = _HOST_GCC_ARGS + _OPT_FLAGS + _MUSL_TARGET,
     install_base = [
         ":host-binutils-s1",
         ":musl-s1",
     ],
     make = ":make",
-    musl_gcc = ":musl_gcc",
-    musl_toolchain = ":musl_files",
 )
 
 # ---------------------------------------------------------------------------
@@ -270,7 +286,10 @@ _USERLAND_ARGS = [
         ),
         (
             "coreutils",
-            ["--enable-install-program=hostname"],
+            [
+                "--enable-install-program=hostname",
+                "--enable-no-install-program=stdbuf",
+            ],
         ),
         ("sed", []),
         (
@@ -312,7 +331,7 @@ tree_merge(
 # ---------------------------------------------------------------------------
 # Stage 2: the same host toolchain rebuilt by stage 1, running on the
 # from-source GNU userland. No prebuilt binary is an input to these
-# actions — the seed toolchain and seed busybox are absent.
+# actions — the compiler seed and seed BusyBox are absent.
 # ---------------------------------------------------------------------------
 
 autotools_build(

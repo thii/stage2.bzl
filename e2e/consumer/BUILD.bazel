@@ -1,7 +1,58 @@
 load(
     "@stage2.bzl",
     "stage2_autotools_build",
+    "stage2_compiler_seed",
     "stage2_run",
+)
+
+stage2_compiler_seed(
+    name = "custom_compiler_seed",
+    env = {
+        "AR": "%{TOOLS}/ar",
+        "CC": "%{COMPILER}/bin/x86_64-linux-musl-cc -static",
+        "CXX": "%{COMPILER}/bin/c++ -static",
+        "LD": "%{TOOLS}/ld",
+        "NM": "%{TOOLS}/nm",
+        "RANLIB": "%{TOOLS}/ranlib",
+        "STRIP": "%{TOOLS}/strip",
+    },
+    inputs = ["@custom_compiler_seed_x86_64//:all"],
+    path = [
+        "%{COMPILER}/bin",
+        "%{TOOLS}",
+    ],
+    roots = {
+        "COMPILER": (
+            "@custom_compiler_seed_x86_64//:bin/x86_64-linux-musl-cc",
+            "bin/x86_64-linux-musl-cc",
+        ),
+        "TOOLS": (
+            "@custom_compiler_seed_x86_64//:bin/ar",
+            "ar",
+        ),
+    },
+    symlinks = {"%{COMPILER}/usr": "."},
+)
+
+stage2_compiler_seed(
+    name = "zig_compiler_seed_aarch64",
+    env = {
+        "AR": "%{ZIG}/zig ar",
+        "CC": "%{ZIG}/zig cc -target aarch64-linux-musl -static",
+        "CXX": "%{ZIG}/zig c++ --driver-mode=g++ -target aarch64-linux-musl -static",
+        "LD": "%{ZIG}/zig ld.lld",
+        "RANLIB": "%{ZIG}/zig ranlib",
+        "ZIG_GLOBAL_CACHE_DIR": "%{ZIG}/.cache/global",
+        "ZIG_LOCAL_CACHE_DIR": "%{ZIG}/.cache/local",
+    },
+    inputs = ["@zig_compiler_seed_aarch64//:all"],
+    path = ["%{ZIG}"],
+    roots = {
+        "ZIG": (
+            "@zig_compiler_seed_aarch64//:zig",
+            "zig",
+        ),
+    },
 )
 
 stage2_autotools_build(

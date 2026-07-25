@@ -1,6 +1,10 @@
 """Public API for the stage2.bzl rules library."""
 
 load(
+    "//internal:compiler_seed.bzl",
+    _stage2_compiler_seed = "stage2_compiler_seed",
+)
+load(
     "//internal:gcc.bzl",
     _GCC_NEWLIB_ARGS = "GCC_NEWLIB_ARGS",
     _stage2_gcc = "gcc",
@@ -28,6 +32,7 @@ stage2_tree_merge = _stage2_tree_merge
 stage2_dist_tarball = _stage2_dist_tarball
 stage2_gcc = _stage2_gcc
 stage2_gcc_w64 = _stage2_gcc_w64
+stage2_compiler_seed = _stage2_compiler_seed
 
 STAGE_CC = _STAGE_CC
 OPT_FLAGS = _OPT_FLAGS

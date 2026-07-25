@@ -22,11 +22,11 @@ Common machinery for both modes:
     configure-generated code spawns it too. Actions refuse to run if a
     /bin/sh already exists: that would mean a non-hermetic sandbox and a
     mixed host/hermetic build.
-  - The compiler comes either from the static musl.cc seed toolchain
-    (`musl_toolchain`/`musl_gcc` attrs — stage-1 targets only) or from a
-    previously built stage tree (`path_trees` attr). Every compiler
-    spelling pins `-static` so that configure run-tests and generated
-    tools work in a root with no dynamic loader.
+  - The compiler comes either from the selected static compiler seed
+    (described by `compiler_seed` for stage-0/1 targets only) or from a
+    previously built stage tree (`path_trees` attr). Seed descriptions
+    may provide another compiler, but must still link static configure
+    tests and generated tools for a root with no dynamic loader.
   - autoconf quirks: MKDIR_P/INSTALL are pinned in the *environment*
     (autoconf 2.69's race-free-mkdir probe would otherwise fall back to
     the shebang-executed install-sh under busybox; the GCC/binutils
@@ -42,6 +42,8 @@ path of the target's own output tree for exactly that purpose.
 No genrules anywhere: genrules require the host bash. Every action here
 execs its shell directly.
 """
+
+load(":compiler_seed.bzl", "CompilerSeedInfo")
 
 visibility("//...")
 
@@ -59,7 +61,7 @@ SCRATCH="$ROOT/%{scratch}"
 _BUSYBOX_BOOTSTRAP = """BB="$ROOT/%{busybox}"
 "$BB" mkdir -p "$SCRATCH/tools" "$SCRATCH/build" "$SCRATCH/tmp"
 for a in $("$BB" --list); do "$BB" ln -sf "$BB" "$SCRATCH/tools/$a"; done
-export PATH="$SCRATCH/tools:%{path}"
+export PATH="%{path}$SCRATCH/tools"
 SH="$SCRATCH/tools/sh"
 """
 
@@ -96,15 +98,6 @@ export INSTALL="%{bindir}/install -c" MAKEINFO=true
 export CC_FOR_BUILD="%{build_cc}" CXX_FOR_BUILD="%{build_cxx}"
 """
 
-# The musl.cc seed toolchain resolves headers/libraries through a
-# `usr -> .` self-symlink at its root. That symlink cannot be a declared
-# input (it would make glob(["**"]) recurse forever), so recreate it
-# inside the ephemeral sandbox copy of the repository.
-_SEED_USR_LINK = """if [ ! -e "$ROOT/%{musl_root}/usr" ]; then
-    ln -sf . "$ROOT/%{musl_root}/usr" || true
-fi
-"""
-
 def _run(cmd, log, tail = "80"):
     return _subst(
         """%{cmd} > "$SCRATCH/%{log}" 2>&1 || (
@@ -122,10 +115,10 @@ def _common_attrs():
     # exec configuration's platform is the host even when --platforms
     # points somewhere exotic.
     #
-    # userland / musl_toolchain / musl_gcc have no defaults: stage-2+
-    # targets must pass a from-source userland explicitly, and only
-    # stage-1 targets may reference the prebuilt compiler seed. The
-    # busybox default covers the bootstrap tier.
+    # userland / compiler_seed have no defaults: stage-2+ targets must
+    # pass a from-source userland explicitly, and only stage-0/1 targets
+    # may reference a prebuilt compiler seed. The busybox default covers
+    # the bootstrap tier.
     return {
         "userland": attr.label(
             allow_single_file = True,
@@ -137,12 +130,10 @@ def _common_attrs():
             cfg = "exec",
             default = Label("//internal:busybox"),
         ),
-        "musl_toolchain": attr.label(
+        "compiler_seed": attr.label(
             cfg = "exec",
-        ),
-        "musl_gcc": attr.label(
-            allow_single_file = True,
-            cfg = "exec",
+            providers = [CompilerSeedInfo],
+            doc = "Complete static compiler seed for stage-0/1 actions.",
         ),
         "build_cc": attr.string(default = "gcc -static"),
         "build_cxx": attr.string(default = "g++ -static"),
@@ -155,17 +146,52 @@ def _common_attrs():
         "tool_subdir": attr.string(default = ""),
     }
 
+def _expand_seed_template(template, roots):
+    result = template
+    for token, root in roots.items():
+        result = result.replace("%{" + token + "}", root)
+    if "%{" in result:
+        fail("unknown compiler-seed root token in {!r}".format(template))
+    return result
+
+def _seed_shell_value(template, roots):
+    # Values are assigned inside shell double quotes. Escape user-provided
+    # shell metacharacters first, then inject the one expansion we intend:
+    # $ROOT followed by an execroot-relative declared-input path.
+    escaped = template.replace("\\", "\\\\")
+    escaped = escaped.replace("\"", "\\\"")
+    escaped = escaped.replace("`", "\\`")
+    escaped = escaped.replace("$", "\\$")
+    shell_roots = {
+        token: "$ROOT/" + root
+        for token, root in roots.items()
+    }
+    return _expand_seed_template(escaped, shell_roots)
+
+def _shell_single_quote(value):
+    return "'" + value.replace("'", "'\"'\"'") + "'"
+
 def _preamble(ctx, scratch, extra_path_dirs):
     path_dirs = list(extra_path_dirs)
     for tree in ctx.files.path_trees:
         path_dirs.append(tree.path + "/bin")
         if ctx.attr.tool_subdir:
             path_dirs.append(tree.path + "/" + ctx.attr.tool_subdir + "/bin")
-    musl_root = None
-    if ctx.file.musl_gcc:
-        musl_bin = ctx.file.musl_gcc.dirname
-        path_dirs.append(musl_bin)
-        musl_root = musl_bin.rsplit("/", 1)[0]
+
+    seed = ctx.attr.compiler_seed[CompilerSeedInfo] if ctx.attr.compiler_seed else None
+    if seed and ctx.file.userland:
+        fail("compiler_seed is only valid in the BusyBox-backed stage-0/1 bootstrap")
+    seed_roots = {}
+    if seed:
+        # Compiler commands use stable scratch-local copies, rather than
+        # repository-dependent input paths that configure could record. The
+        # copies also let a seed safely request synthetic links.
+        seed_roots = {
+            token: scratch + "/compiler-seed/" + token
+            for token in seed.roots
+        }
+        for entry in seed.path:
+            path_dirs.append(_expand_seed_template(entry, seed_roots))
     path = ":".join(['"$ROOT"/' + d for d in path_dirs])
 
     text = _subst(_COMMON_HEAD, {"scratch": scratch})
@@ -178,16 +204,54 @@ def _preamble(ctx, scratch, extra_path_dirs):
     else:
         text += _subst(_BUSYBOX_BOOTSTRAP, {
             "busybox": ctx.file.busybox.path,
-            "path": path,
+            "path": path + ":" if path else "",
         })
         bindir = '"$SCRATCH"/tools'
+
+    build_cc = ctx.attr.build_cc
+    build_cxx = ctx.attr.build_cxx
+    if seed:
+        build_cc = _seed_shell_value(seed.env["CC"], seed_roots)
+        build_cxx = _seed_shell_value(seed.env["CXX"], seed_roots)
     text += _subst(_COMMON_TAIL, {
         "bindir": bindir,
-        "build_cc": ctx.attr.build_cc,
-        "build_cxx": ctx.attr.build_cxx,
+        "build_cc": build_cc,
+        "build_cxx": build_cxx,
     })
-    if musl_root:
-        text += _subst(_SEED_USR_LINK, {"musl_root": musl_root})
+
+    if seed:
+        text += 'mkdir -p "$SCRATCH/compiler-seed"\n'
+        for token in sorted(seed.roots):
+            text += """"$BB" mkdir -p "$SCRATCH/compiler-seed"/{token}
+"$BB" cp -a "$ROOT"/{root}/. "$SCRATCH/compiler-seed"/{token}/
+""".format(
+                root = _shell_single_quote(seed.roots[token]),
+                token = _shell_single_quote(token),
+            )
+
+        for name in sorted(seed.env):
+            if name in ["CC", "CXX"]:
+                continue
+            text += "export {}=\"{}\"\n".format(
+                name,
+                _seed_shell_value(seed.env[name], seed_roots),
+            )
+        text += 'export CC="$CC_FOR_BUILD" CXX="$CXX_FOR_BUILD"\n'
+
+        # Some archive layouts omit cyclic links that Bazel cannot represent
+        # as declared inputs. Recreate only links explicitly requested by the
+        # selected seed, inside its ephemeral scratch copy.
+        for link in sorted(seed.symlinks):
+            target = seed.symlinks[link]
+            link_path = _expand_seed_template(link, seed_roots)
+            link_arg = '"$ROOT"/' + _shell_single_quote(link_path)
+            text += """if [ ! -e {link} ] && [ ! -L {link} ]; then
+    "$BB" ln -sf {target} {link}
+fi
+""".format(
+                link = link_arg,
+                target = _shell_single_quote(target),
+            )
     return text
 
 def _common_inputs(ctx):
@@ -195,8 +259,8 @@ def _common_inputs(ctx):
     # busybox — never both, so userland-mode actions have no prebuilt
     # binary among their inputs.
     inputs = [ctx.file.userland] if ctx.file.userland else [ctx.file.busybox]
-    if ctx.attr.musl_toolchain:
-        inputs += ctx.attr.musl_toolchain.files.to_list()
+    if ctx.attr.compiler_seed:
+        inputs += ctx.attr.compiler_seed[CompilerSeedInfo].files.to_list()
     return inputs
 
 def _run_shell(ctx, script, inputs, outputs, mnemonic, progress_message):

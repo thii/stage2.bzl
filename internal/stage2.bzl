@@ -126,9 +126,11 @@ USERLAND_KWARGS = {
     "userland": Label("//trees:default_userland"),
 }
 
-def _reject_make(wrapper, kwargs):
+def _reject_bootstrap_attrs(wrapper, kwargs):
     if "make" in kwargs:
         fail("{} does not accept make; provide bin/make through userland instead".format(wrapper))
+    if "compiler_seed" in kwargs:
+        fail("{} does not accept compiler_seed; select it through the compiler_seeds module extension".format(wrapper))
 
 def stage2_autotools_build(use_default_cc = True, stage_cc = True, **kwargs):
     """autotools_build preconfigured for the stage-2 toolchain + userland.
@@ -145,7 +147,7 @@ def stage2_autotools_build(use_default_cc = True, stage_cc = True, **kwargs):
       stage_cc: Whether to append STAGE_CC to configure_args.
       **kwargs: Attributes forwarded to the internal autotools rule.
     """
-    _reject_make("stage2_autotools_build", kwargs)
+    _reject_bootstrap_attrs("stage2_autotools_build", kwargs)
     if use_default_cc:
         kwargs["path_trees"] = kwargs.get("path_trees", []) + [
             Label("//trees:cc"),
@@ -162,7 +164,7 @@ def stage2_run(inputs = {}, extra_inputs = [], **kwargs):
       extra_inputs: Additional declared inputs that need no token.
       **kwargs: Attributes forwarded to the internal hermetic-run rule.
     """
-    _reject_make("stage2_run", kwargs)
+    _reject_bootstrap_attrs("stage2_run", kwargs)
     for old_name, replacement in [
         ("files", "inputs"),
         ("srcs", "extra_inputs"),
