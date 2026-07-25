@@ -273,10 +273,10 @@ _USERLAND_PACKAGES = [
         [
             # Internal malloc misbehaves on musl; Alpine disables it too.
             "--without-bash-malloc",
-            # Static libc cannot be linked into Bash's shared loadable
-            # builtins. Disable them instead of ignoring their failed
-            # install and producing a compiler-dependent partial tree.
-            "ac_cv_func_dlopen=no",
+            # This is Bash's supported static-shell mode. Besides supplying
+            # -static, it skips the dlopen checks so loadable builtins are not
+            # compiled against a static libc.
+            "--enable-static-link",
         ],
     ),
     (

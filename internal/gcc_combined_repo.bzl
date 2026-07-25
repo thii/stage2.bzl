@@ -28,7 +28,10 @@ _GCC = struct(
 )
 
 _NEWLIB = struct(
-    url = "https://sourceware.org/pub/newlib/newlib-4.5.0.20241231.tar.gz",
+    url = [
+        "https://mirrors.kernel.org/sourceware/newlib/newlib-4.5.0.20241231.tar.gz",
+        "https://sourceware.org/pub/newlib/newlib-4.5.0.20241231.tar.gz",
+    ],
     sha256 = "33f12605e0054965996c25c1382b3e463b0af91799001f5bb8c0630f2ec8c852",
     strip_prefix = "newlib-4.5.0.20241231",
 )
