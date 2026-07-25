@@ -4,7 +4,7 @@ stage2.bzl is a Bazel rules library for building software from source in an
 empty Linux sandbox. It provides a source-built compiler, shell, userland, and
 common build tools.
 
-From stage 2 onward, library-owned actions use no downloaded executable as
+From stage 2 onward, library-owned actions use no prebuilt executable as
 build machinery. The complete bootstrap is not seedless: a musl.cc GCC and
 Alpine BusyBox are used below that boundary.
 
@@ -13,26 +13,16 @@ Alpine BusyBox are used below that boundary.
 - Linux `x86_64` or `aarch64`
 - Bazel 9 or newer
 - Linux user namespaces
-- Network access while Bazel fetches pinned inputs
 
-The module is not yet in a public registry, so pin the repository:
+In your MODULE.bazel:
 
 ```starlark
-# MODULE.bazel
-bazel_dep(name = "stage2.bzl", version = "1.0.0")
-bazel_dep(name = "platforms", version = "1.1.0")
-
-git_override(
-    module_name = "stage2.bzl",
-    commit = "<full commit SHA>",
-    remote = "https://github.com/thii/stage2.bzl.git",
-)
+bazel_dep(name = "stage2.bzl", version = "0.0.1")
 ```
 
-Dependency settings do not propagate. Every consumer needs:
+In your .bazelrc:
 
 ```text
-# .bazelrc
 common --enable_platform_specific_config
 build:linux --experimental_use_hermetic_linux_sandbox
 build:linux --spawn_strategy=linux-sandbox
@@ -40,70 +30,95 @@ build:linux --sandbox_default_allow_network=false
 ```
 
 These settings select the empty sandbox, reject weaker spawn strategies, and
-disable action network access. Repository rules may fetch before actions run;
-pin those inputs. Do not mount host tools or directories into the sandbox.
-A valid root starts without `/usr`, `/lib`, or `/bin/sh`; the preamble rejects
+disable action network access. Do not mount anything into the sandbox. A
+valid root starts without `/usr`, `/lib`, or `/bin/sh`; the preamble rejects
 an existing `/bin/sh`, then creates an ephemeral link to its declared shell.
 Remote execution is not supported.
 
 ## Quickstart
 
-Given `hello.c`:
+Build GNU Hello through its normal `configure`, `make`, and `make install`
+flow. Add its pinned source archive to `MODULE.bazel`:
 
-```c
-#include <stdio.h>
+```starlark
+http_archive = use_repo_rule(
+    "@bazel_tools//tools/build_defs/repo:http.bzl",
+    "http_archive",
+)
 
-int main(void) {
-    puts("hello");
-    return 0;
-}
+http_archive(
+    name = "hello_src",
+    build_file_content = """filegroup(
+    name = "srcs",
+    srcs = glob(["**"]),
+    visibility = ["//visibility:public"],
+)
+exports_files(["configure"])
+""",
+    sha256 = "8d99142afd92576f30b0cd7cb42a8dc6809998bc5d607d88761f512e26c7db20",
+    strip_prefix = "hello-2.12.1",
+    urls = ["https://ftp.gnu.org/gnu/hello/hello-2.12.1.tar.gz"],
+)
 ```
 
-build it with the public compiler tree:
+Then build the install tree:
 
 ```starlark
 # BUILD.bazel
-load("@stage2.bzl", "stage2_run")
+load("@stage2.bzl", "stage2_autotools_build")
 
-stage2_run(
+stage2_autotools_build(
     name = "hello",
-    inputs = {"SRC": ":hello.c"},
-    path_trees = ["@stage2.bzl//trees:cc"],
-    script = "$CC_FOR_BUILD -O2 -static %{SRC} -o %{OUT}\n",
+    srcs = "@hello_src//:srcs",
+    configure = "@hello_src//:configure",
+    configure_args = [
+        "--disable-nls",
+        "CFLAGS=-O2 -std=gnu17",
+        "LDFLAGS=--static",
+    ],
 )
 ```
 
 ```sh
 bazel build //:hello
-./bazel-bin/hello
+./bazel-bin/hello/bin/hello
 ```
 
-`stage2_run` supplies the default userland but no compiler.
-`stage2_autotools_build` supplies both.
+`stage2_autotools_build` supplies the default compiler and userland, runs all
+three build phases, and returns the installed directory tree.
 
-## Rules and trees
+## Custom builds
 
-Load supported symbols from `@stage2.bzl`. For an Autotools
-package, expose a pinned source tree and its configure script:
+Use `stage2_run` when a build does not fit the Autotools lifecycle. Given an
+`input.txt`, this example builds a SHA-256 manifest:
 
 ```starlark
-load("@stage2.bzl", "stage2_autotools_build")
+load("@stage2.bzl", "stage2_run")
 
-stage2_autotools_build(
-    name = "package",
-    configure = "@package_src//:configure",
-    srcs = "@package_src//:srcs",
+stage2_run(
+    name = "manifest",
+    inputs = {"INPUT": ":input.txt"},
+    out = "manifest.sha256",
+    script = "sha256sum %{INPUT} > %{OUT}\n",
 )
 ```
 
-The action uses the default compiler and userland and returns an install tree.
-Other macros run scripts, merge trees, create distribution archives, and build
-GCC/newlib cross toolchains. Reusable filesystem trees are public under
-`@stage2.bzl//trees`; everything under `//internal` is private.
+```sh
+bazel build //:manifest
+cat bazel-bin/manifest.sha256
+```
 
-The [API reference](docs/api.md) lists every macro, supported parameter, token,
-constant, public tree, and command requirement. A complete `http_archive`
-consumer lives in [`e2e/consumer`](e2e/consumer/).
+The script may run any build commands supplied by the userland or
+`path_trees`. Declare tokenized inputs with `inputs`, other inputs with
+`extra_inputs`, and create `%{OUT}`. Add
+`@stage2.bzl//trees:cc` to `path_trees` when the script needs the default
+compiler; use `out_tree = True` for a directory output.
+
+## Rules and trees
+
+Load supported symbols from `@stage2.bzl`. Other macros merge trees, create
+distribution archives, and build GCC/newlib cross toolchains. Reusable
+filesystem trees are public under `@stage2.bzl//trees`.
 
 ## Userlands
 
@@ -132,66 +147,35 @@ Public components preserve the library's provenance claim. A custom tree does
 so only when its complete executable provenance is audited; a Bazel label alone
 is not proof.
 
-## Caching and troubleshooting
-
-A cold output base bootstraps the build environment. Reuse completed actions
-and limit outer parallelism on smaller machines with:
-
-```sh
-bazel build --jobs=1 --disk_cache=/absolute/path/to/stage2-cache //:target
-```
-
-A writable cache is trusted because later builds may execute binaries restored
-from it. Bazel's separate repository cache avoids re-downloading source inputs.
-
-- If `/bin/sh` already exists, the empty sandbox is not active. Check all four
-  `.bazelrc` lines and command-line overrides; do not suppress the tripwire.
-- If `linux-sandbox` cannot create namespaces, enable unprivileged user
-  namespaces. On Ubuntu,
-  `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` is a
-  host-wide diagnostic; prefer an administrator-managed AppArmor policy on
-  shared systems.
-- Download failures occur before build actions. Use a repository cache or a
-  byte-identical mirror with the same SHA-256.
-
-## Examples
-
-The `//examples` packages demonstrate bare-metal GCC/newlib for RISC-V,
-AArch64, and Arm; Linux- and Windows-hosted cross toolchains; and
-Darwin-hosted Clang/LLD. They are examples, not supported distributions.
-
-```sh
-bazel build //examples/riscv-none-elf-gcc:dist
-```
-
-The macOS SDK tree begins with a pinned Apple package. Source-built tools
-extract it without executing its compiled payloads and remove Mach-O files and
-archives. The public tree retains headers, text `.tbd` stubs, and non-executable
-SDK metadata. SDK use remains subject to Apple's license.
-
 ## Trust boundary
 
-| stage | inputs and result |
-|---|---|
-| 0 | Downloaded static musl.cc GCC and Alpine BusyBox are the compiler and shell seeds. |
-| 1 and tooling | The seeds build static binutils, musl, GCC, GNU make, Bash, and the GNU userland. |
-| 2 and later | Stage 1 rebuilds the native toolchain with the source-built userland. Seed executables are absent from these actions' direct inputs; the result is `@stage2.bzl//trees:cc`. |
+| tier | executable build machinery | what it builds |
+|---|---|---|
+| Seeds | Prebuilt static `musl.cc` and `busybox` | The starting inputs; they are downloaded rather than built here. |
+| Stage 0 | The seed compiler and `busybox` | Bootstrapped `make` without an existing `make`. |
+| Stage 1 | The seed compiler, `busybox`, and stage-0 `make` | Static `binutils`, `musl`, and a C/C++ GCC toolchain for the host architecture. |
+| Stage 1 tooling | The stage-1 compiler and `busybox`; stage-0 `make` drives every package except the self-bootstrapped replacement `make` | `make`, `bash`, `coreutils`, `sed`, `grep`, `findutils`, `diffutils`, `tar`, `gzip`, and `gawk`. |
+| Stage 2 | The stage-1 compiler and the source-built userland | A second build of static `binutils`, `musl`, and `gcc`, exposed as `@stage2.bzl//trees:cc`. No seed executable is a direct input. |
+| Later library builds | The stage-2 compiler and source-built userland | Consumer packages, cross toolchains, and optional source-built tools such as CMake, Python, and Clang. |
 
-The full transitive graph still reaches both seeds. The claim is per-action
-tool provenance, not a claim that every input byte is source text. Consumer
-inputs and custom trees may contain anything; consumers inherit the claim only
-when their executable tools have audited source-built provenance. Cross-built
-PE and Mach-O programs are outputs, not tools executed during the Linux build.
+## Caveats
 
-Inspect a target's action graph with:
+stage2.bzl wraps each upstream build in a coarse shell action. This favors
+auditable tool provenance, hermetic correctness, and compatibility with
+conventional source builds, but gives up much of Bazel's native integration:
 
-```sh
-bazel aquery 'deps(//your:target)' --output=text \
-  > /tmp/stage2-action-graph.txt
-```
+- Changing any input reruns the whole action. Bazel cannot cache or schedule
+  individual compilations; `make` or the script controls internal parallelism.
+- Compilers and tools are filesystem trees rather than Bazel-resolved
+  platforms and toolchains. Language providers, dependency analysis, per-file
+  diagnostics, test sharding, and similar integrations are unavailable inside
+  the action.
+- Remote execution is unsupported.
 
-Trace executable tools and generated trees to their producers, match external
-inputs to accepted pins, audit every consumer-supplied input, and verify the
-four `.bazelrc` lines. The kernel, Bazel, repository fetching, and writable
-caches remain trusted. SHA-256 establishes byte identity rather than authorship,
-and stage2.bzl does not claim general build reproducibility.
+## Compared with Docker
+
+- No Docker or other container daemon is required. Bazel creates each action
+  sandbox directly from declared files and trees, which remain visible in the
+  action graph.
+- From stage 2 onward, library-owned actions use only executable build tools
+  compiled from source.
