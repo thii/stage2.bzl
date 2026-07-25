@@ -39,22 +39,38 @@ _NEWLIB = struct(
 # name in tree -> archive; versions per gcc-15.2.0/contrib/download_prerequisites.
 _PREREQUISITES = {
     "gmp": struct(
-        url = "https://gcc.gnu.org/pub/gcc/infrastructure/gmp-6.2.1.tar.bz2",
+        url = [
+            "https://ftpmirror.gnu.org/gmp/gmp-6.2.1.tar.bz2",
+            "https://ftp.gnu.org/gnu/gmp/gmp-6.2.1.tar.bz2",
+            "https://gcc.gnu.org/pub/gcc/infrastructure/gmp-6.2.1.tar.bz2",
+        ],
         sha256 = "eae9326beb4158c386e39a356818031bd28f3124cf915f8c5b1dc4c7a36b4d7c",
         strip_prefix = "gmp-6.2.1",
     ),
     "mpfr": struct(
-        url = "https://gcc.gnu.org/pub/gcc/infrastructure/mpfr-4.1.0.tar.bz2",
+        url = [
+            "https://ftpmirror.gnu.org/mpfr/mpfr-4.1.0.tar.bz2",
+            "https://ftp.gnu.org/gnu/mpfr/mpfr-4.1.0.tar.bz2",
+            "https://gcc.gnu.org/pub/gcc/infrastructure/mpfr-4.1.0.tar.bz2",
+        ],
         sha256 = "feced2d430dd5a97805fa289fed3fc8ff2b094c02d05287fd6133e7f1f0ec926",
         strip_prefix = "mpfr-4.1.0",
     ),
     "mpc": struct(
-        url = "https://gcc.gnu.org/pub/gcc/infrastructure/mpc-1.2.1.tar.gz",
+        url = [
+            "https://ftpmirror.gnu.org/mpc/mpc-1.2.1.tar.gz",
+            "https://ftp.gnu.org/gnu/mpc/mpc-1.2.1.tar.gz",
+            "https://gcc.gnu.org/pub/gcc/infrastructure/mpc-1.2.1.tar.gz",
+        ],
         sha256 = "17503d2c395dfcf106b622dc142683c1199431d095367c6aacba6eec30340459",
         strip_prefix = "mpc-1.2.1",
     ),
     "isl": struct(
-        url = "https://gcc.gnu.org/pub/gcc/infrastructure/isl-0.24.tar.bz2",
+        url = [
+            "https://mirrors.kernel.org/sourceware/gcc/infrastructure/isl-0.24.tar.bz2",
+            "https://libisl.sourceforge.io/isl-0.24.tar.bz2",
+            "https://gcc.gnu.org/pub/gcc/infrastructure/isl-0.24.tar.bz2",
+        ],
         sha256 = "fcf78dd9656c10eb8cf9fbd5f59a0b6b01386205fe1934b3b287a0a1898145c0",
         strip_prefix = "isl-0.24",
     ),
