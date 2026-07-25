@@ -149,14 +149,13 @@ is not proof.
 
 ## Trust boundary
 
-| tier | executable build machinery | what it builds |
-|---|---|---|
-| Seeds | Prebuilt static `musl.cc` and `busybox` | The starting inputs; they are downloaded rather than built here. |
-| Stage 0 | The seed compiler and `busybox` | Bootstrapped `make` without an existing `make`. |
-| Stage 1 | The seed compiler, `busybox`, and stage-0 `make` | Static `binutils`, `musl`, and a C/C++ GCC toolchain for the host architecture. |
-| Stage 1 tooling | The stage-1 compiler and `busybox`; stage-0 `make` drives every package except the self-bootstrapped replacement `make` | `make`, `bash`, `coreutils`, `sed`, `grep`, `findutils`, `diffutils`, `tar`, `gzip`, and `gawk`. |
-| Stage 2 | The stage-1 compiler and the source-built userland | A second build of static `binutils`, `musl`, and `gcc`, exposed as `@stage2.bzl//trees:cc`. No seed executable is a direct input. |
-| Later library builds | The stage-2 compiler and source-built userland | Consumer packages, cross toolchains, and optional source-built tools such as CMake, Python, and Clang. |
+- Stage 0: the downloaded musl.cc compiler and BusyBox build GNU Make.
+- Stage 1: musl.cc, BusyBox, and stage-0 Make build the first static
+  binutils/musl/GCC toolchain. That compiler then builds the source-based
+  userland, while BusyBox and stage-0 Make still drive the actions.
+- Stage 2: the stage-1 compiler and source-built userland rebuild static
+  binutils, musl, and GCC. The resulting toolchain is exposed as
+  `@stage2.bzl//trees:cc` and drives later builds.
 
 ## Caveats
 

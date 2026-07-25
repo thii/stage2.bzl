@@ -1,31 +1,6 @@
-"""stage2.bzl: developer tools built from source with Bazel, inside the
-hermetic Linux sandbox (--experimental_use_hermetic_linux_sandbox) without
-mounting anything from the host. The name marks the trust boundary: from
-stage 2 of the bootstrap onward, no action has any prebuilt binary among
-its inputs.
-
-First tool: the riscv-none-elf GCC toolchain.
-
-The first tools are GNU cross toolchains built from these components:
-  - GCC 15.2.0
-  - binutils 2.45
-  - newlib 4.5.0
-  - target riscv-none-elf, default architecture rv32imac/ilp32
-
-Because the sandbox root is empty (no /bin, /lib, /usr, not even /bin/sh),
-every build prerequisite is a pinned download that runs standalone:
-  - host C/C++ compiler: musl.cc static native toolchain (GCC 11.2.1);
-    static binaries need no ELF interpreter, so they exec in an empty root,
-    and -static makes every binary they produce equally self-sufficient;
-  - bootstrap shell + userland: Alpine's busybox-static, used only until
-    the from-source GNU userland (bash, coreutils, ...) is built;
-  - GNU make: bootstrapped from source via its shipped build.sh, which is
-    designed to build make without an existing make.
-"""
-
 module(
     name = "stage2.bzl",
-    version = "1.0.0",
+    version = "0.0.1",
     bazel_compatibility = [">=9.0.0"],
 )
 
@@ -282,16 +257,6 @@ http_archive(
     urls = ["https://libarchive.org/downloads/libarchive-3.8.7.tar.xz"],
 )
 
-# Apple Command Line Tools SDK (MacOSX26.5.sdk): headers and .tbd linker
-# stubs — text, no executable code once //internal:macos-sdk prunes the
-# few legacy Mach-O leftovers. Served unauthenticated from Apple's
-# softwareupdate CDN; the URL is one catalog product and can rot when
-# Apple rotates generations (like the Alpine apks — bump URL + sha256
-# from swscan.apple.com/content/catalogs/others/*.sucatalog, products
-# whose Packages list a CLTools_macOSNMOS_SDK.pkg). NOTE: Apple's SDK
-# license ties SDK *use* to Apple-branded hardware; building on a Linux
-# VM hosted on a Mac satisfies that reading, other setups are the user's
-# call — see README.
 http_file(
     name = "macos_sdk_pkg",
     downloaded_file_path = "CLTools_macOSNMOS_SDK.pkg",
