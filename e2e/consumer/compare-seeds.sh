@@ -21,7 +21,7 @@ trap 'exit 143' TERM
 mkdir -p \
   "$DISK_CACHE_ROOT/muslcc" \
   "$DISK_CACHE_ROOT/zig" \
-  "$DISK_CACHE_ROOT/toybox" \
+  "$DISK_CACHE_ROOT/bash" \
   "$STAGE2_ARTIFACTS"
 
 canonicalize_tree() {
@@ -96,7 +96,7 @@ build_lineage() {
   )"
   case "$shell_seed:$shell_seed_input" in
     busybox:*busybox_linux_*) ;;
-    toybox:*toybox_shell_seed_*) ;;
+    bash:*bash_shell_seed_*) ;;
     *)
       echo "$shell_seed resolved to the wrong shell seed: $shell_seed_input" >&2
       return 1
@@ -167,7 +167,7 @@ build_lineage muslcc-busybox muslcc busybox muslcc
 "$BAZEL" --output_base="$STAGE2_OUTPUT_BASE" clean --expunge
 build_lineage zig-busybox zig busybox zig
 "$BAZEL" --output_base="$STAGE2_OUTPUT_BASE" clean --expunge
-build_lineage muslcc-toybox muslcc toybox toybox
+build_lineage muslcc-bash muslcc bash bash
 shutdown_bazel
 
 comparison_failed=0
@@ -204,7 +204,7 @@ compare_to_baseline() {
 }
 
 compare_to_baseline zig-busybox
-compare_to_baseline muslcc-toybox
+compare_to_baseline muslcc-bash
 
 if ((comparison_failed)); then
   echo "The bootstrap seed lineages produced different final outputs" >&2

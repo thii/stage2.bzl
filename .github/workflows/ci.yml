@@ -64,15 +64,15 @@ jobs:
             bazel-disk-e2e-v4-zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion') }}-${{ hashFiles('.bazelignore', '.bazelrc', '.bazelversion', 'BUILD.bazel', 'MODULE.bazel', 'MODULE.bazel.lock', 'extensions.bzl', 'stage2.bzl', 'internal/**', 'trees/**', 'e2e/consumer/.bazelrc', 'e2e/consumer/**', '.github/workflows/ci.yml') }}-
             bazel-disk-e2e-v4-zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion') }}-
 
-      - name: Restore Toybox Bazel results
-        id: toybox_cache
+      - name: Restore Bash Bazel results
+        id: bash_cache
         uses: actions/cache/restore@v5
         with:
-          path: ${{ runner.temp }}/stage2-e2e-disk-cache/toybox
-          key: bazel-disk-e2e-v4-toybox-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion') }}-${{ hashFiles('.bazelignore', '.bazelrc', '.bazelversion', 'BUILD.bazel', 'MODULE.bazel', 'MODULE.bazel.lock', 'extensions.bzl', 'stage2.bzl', 'internal/**', 'trees/**', 'e2e/consumer/.bazelrc', 'e2e/consumer/**', '.github/workflows/ci.yml') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/stage2-e2e-disk-cache/bash
+          key: bazel-disk-e2e-v4-bash-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion') }}-${{ hashFiles('.bazelignore', '.bazelrc', '.bazelversion', 'BUILD.bazel', 'MODULE.bazel', 'MODULE.bazel.lock', 'extensions.bzl', 'stage2.bzl', 'internal/**', 'trees/**', 'e2e/consumer/.bazelrc', 'e2e/consumer/**', '.github/workflows/ci.yml') }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            bazel-disk-e2e-v4-toybox-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion') }}-${{ hashFiles('.bazelignore', '.bazelrc', '.bazelversion', 'BUILD.bazel', 'MODULE.bazel', 'MODULE.bazel.lock', 'extensions.bzl', 'stage2.bzl', 'internal/**', 'trees/**', 'e2e/consumer/.bazelrc', 'e2e/consumer/**', '.github/workflows/ci.yml') }}-
-            bazel-disk-e2e-v4-toybox-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion') }}-
+            bazel-disk-e2e-v4-bash-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion') }}-${{ hashFiles('.bazelignore', '.bazelrc', '.bazelversion', 'BUILD.bazel', 'MODULE.bazel', 'MODULE.bazel.lock', 'extensions.bzl', 'stage2.bzl', 'internal/**', 'trees/**', 'e2e/consumer/.bazelrc', 'e2e/consumer/**', '.github/workflows/ci.yml') }}-
+            bazel-disk-e2e-v4-bash-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion') }}-
 
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.19.0
@@ -105,9 +105,9 @@ jobs:
           path: ${{ runner.temp }}/stage2-e2e-disk-cache/zig
           key: ${{ steps.zig_cache.outputs.cache-primary-key }}
 
-      - name: Save Toybox Bazel results
+      - name: Save Bash Bazel results
         if: ${{ !cancelled() && (steps.build.outcome == 'success' || steps.build.outcome == 'failure') }}
         uses: actions/cache/save@v5
         with:
-          path: ${{ runner.temp }}/stage2-e2e-disk-cache/toybox
-          key: ${{ steps.toybox_cache.outputs.cache-primary-key }}
+          path: ${{ runner.temp }}/stage2-e2e-disk-cache/bash
+          key: ${{ steps.bash_cache.outputs.cache-primary-key }}

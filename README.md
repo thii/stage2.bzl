@@ -203,11 +203,11 @@ shell_seeds.seed(
 ```
 
 `args` precede `-c` for the top-level action; use `["sh"]` for a multicall
-binary such as BusyBox or Toybox and `[]` for Bash. The executable must also
-act as a shell when invoked through a symlink named `sh`, without those
-arguments, because nested build scripts use `/bin/sh`. BusyBox remains on
-`PATH` as the utility fallback; the selected shell may also provide builtins or
-multicall applets.
+binary such as BusyBox and `[]` for Bash. The executable must also act as a
+shell when invoked through a symlink named `sh`, without those arguments,
+because nested build scripts use `/bin/sh`. BusyBox remains on `PATH` as the
+utility fallback; the selected shell may also provide builtins or multicall
+applets.
 
 ## Userlands
 
@@ -245,7 +245,7 @@ is not proof.
   pass links against the rebuilt runtime.
 
 CI varies the compiler seed between musl.cc and Zig and the shell seed between
-BusyBox and Toybox; the closing compiler, userland, and GNU Hello outputs are
+BusyBox and Bash; the closing compiler, userland, and GNU Hello outputs are
 byte-identical on `x86_64` and `aarch64`.
 
 ## Caveats

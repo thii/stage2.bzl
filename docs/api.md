@@ -94,9 +94,9 @@ stage2_shell_seed(
 
 - `executable` is a self-contained static shell.
 - `args` precede `-c` for the top-level action. Use `["sh"]` for a multicall
-  executable such as BusyBox or Toybox and `[]` for Bash. Nested build scripts
-  invoke the executable through a symlink named `sh` without these arguments,
-  so it must dispatch as a shell from that basename.
+  executable such as BusyBox and `[]` for Bash. Nested build scripts invoke the
+  executable through a symlink named `sh` without these arguments, so it must
+  dispatch as a shell from that basename.
 - `inputs` declares any additional files needed to run the shell.
 
 Select it from the root `MODULE.bazel`:

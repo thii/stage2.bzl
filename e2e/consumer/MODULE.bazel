@@ -29,24 +29,28 @@ shell_seeds.seed(
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
-http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+# Debian's static Bash 5.2.37 exercises the bootstrap independently of the
+# default Alpine BusyBox shell.
+bash_static_repo = use_repo_rule("//:bash_static_repo.bzl", "bash_static_repo")
 
-# A second static shell seed exercises the bootstrap independently of the
-# default Alpine BusyBox seed.
-http_file(
-    name = "toybox_shell_seed_x86_64",
-    downloaded_file_path = "toybox",
-    executable = True,
-    sha256 = "836ba9d6821fb3bcd85f4e2c511115d677930796ef76418799e0df95526d4e65",
-    urls = ["https://landley.net/toybox/downloads/binaries/0.8.14/toybox-x86_64"],
+bash_static_repo(
+    name = "bash_shell_seed_x86_64",
+    sha256 = "330db9da02c774a5be2e217c74cd47ff7b5560965ce4ebefe4dffa066716583f",
+    urls = [
+        "https://snapshot.debian.org/file/1dc1ef1d67fb2b1b80031a98b41d2faad8a5c019",
+        "https://snapshot.debian.org/archive/debian/20260510T023319Z/pool/main/b/bash/bash-static_5.2.37-2%2Bb9_amd64.deb",
+        "https://deb.debian.org/debian/pool/main/b/bash/bash-static_5.2.37-2%2Bb9_amd64.deb",
+    ],
 )
 
-http_file(
-    name = "toybox_shell_seed_aarch64",
-    downloaded_file_path = "toybox",
-    executable = True,
-    sha256 = "223b5ff5929371225d0bc62fb3b99a148692295fb6f85ad86bb924f689a55ea4",
-    urls = ["https://landley.net/toybox/downloads/binaries/0.8.14/toybox-aarch64"],
+bash_static_repo(
+    name = "bash_shell_seed_aarch64",
+    sha256 = "eff85e8976a60957c53c2b235f15dbc4c534e241397fd2012a9bffd93e99eb92",
+    urls = [
+        "https://snapshot.debian.org/file/df6b894313ab052b41fbf63721d8df23210b001b",
+        "https://snapshot.debian.org/archive/debian/20260510T023319Z/pool/main/b/bash/bash-static_5.2.37-2%2Bb9_arm64.deb",
+        "https://deb.debian.org/debian/pool/main/b/bash/bash-static_5.2.37-2%2Bb9_arm64.deb",
+    ],
 )
 
 # Zig ships the static compiler, linker, musl sysroot, and runtime needed by
