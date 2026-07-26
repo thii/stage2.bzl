@@ -112,6 +112,7 @@ build_lineage() {
     --disk_cache="$DISK_CACHE_ROOT/$disk_cache" \
     --jobs=1 \
     --repository_cache="$REPOSITORY_CACHE" \
+    //:hello \
     //:hello-output \
     @stage2.bzl//trees:cc \
     @stage2.bzl//trees:default_userland
@@ -139,6 +140,10 @@ build_lineage() {
     [[ -n "$relative" && "$relative" != *$'\n'* ]]
     source="$execroot/$relative"
     [[ -d "$source" ]]
+    if [[ -z "$(/usr/bin/find "$source" -mindepth 1 -print -quit)" ]]; then
+      echo "$label was not materialized" >&2
+      return 1
+    fi
     canonicalize_tree "$source" "$artifact_dir/$name.tar.gz"
   done <<'TREES'
 cc|@stage2.bzl//trees:cc
