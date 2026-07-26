@@ -213,12 +213,15 @@ is not proof.
   closing toolchain pass links against the rebuilt runtime. The closing
   compiler and userland trees drive later builds.
 
-CI repeats the bootstrap from the musl.cc and Zig seeds on `x86_64` and
-`aarch64`. Within each architecture, the closing compiler, userland, and GNU
-Hello trees must have identical paths, modes, symlinks, and file bytes; the
-raw Hello output must also be byte-identical.
-This detects seed-specific influence; it does not validate the source archives,
-Bazel, or the host kernel, or rule out a compromise shared by both seeds.
+The public closing outputs are compiler-seed-independent with respect to the
+two diverse seeds exercised by CI. On `x86_64` and `aarch64`, CI repeats the
+bootstrap from musl.cc and Zig; the closing compiler, userland, and GNU Hello
+trees must have identical paths, modes, symlinks, and file bytes, and the raw
+Hello output must be byte-identical.
+
+This is a trust-minimized claim, not a trustless one. It detects seed-specific
+influence; it does not validate the source archives, Bazel, or the host kernel,
+or rule out a compromise shared by both seeds.
 
 ## Caveats
 
