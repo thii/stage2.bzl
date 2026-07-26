@@ -11,6 +11,10 @@ load(
     _stage2_gcc_w64 = "gcc_w64",
 )
 load(
+    "//internal:shell_seed.bzl",
+    _stage2_shell_seed = "stage2_shell_seed",
+)
+load(
     "//internal:stage2.bzl",
     _BINUTILS_ARGS = "BINUTILS_ARGS",
     _BUILD_TRIPLE_ARG = "BUILD_TRIPLE_ARG",
@@ -33,6 +37,7 @@ stage2_dist_tarball = _stage2_dist_tarball
 stage2_gcc = _stage2_gcc
 stage2_gcc_w64 = _stage2_gcc_w64
 stage2_compiler_seed = _stage2_compiler_seed
+stage2_shell_seed = _stage2_shell_seed
 
 STAGE_CC = _STAGE_CC
 OPT_FLAGS = _OPT_FLAGS

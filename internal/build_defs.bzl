@@ -9,10 +9,10 @@ modes exist, selected by which attribute a target sets:
     see //internal:userland-s2-final). The action executes its bash directly;
     PATH points into the tree. No prebuilt binary is among the action's
     inputs.
-  - `busybox` (stage 0/1 and the first userland package builds): the
-    prebuilt static Alpine busybox, exec'd directly as `sh`, with a
-    symlink farm of its applets on PATH. This is the irreducible
-    bootstrap shell: building a shell from source needs a shell.
+  - bootstrap (stage 0/1 and the first userland package builds): a
+    selectable prebuilt shell seed runs the action. Static Alpine BusyBox
+    supplies the utility-applet symlink farm on PATH and is the default
+    shell seed. Building a shell from source still needs a shell.
 
 Common machinery for both modes:
 
@@ -46,6 +46,7 @@ execs its shell directly.
 """
 
 load(":compiler_seed.bzl", "CompilerSeedInfo")
+load(":shell_seed.bzl", "ShellSeedInfo")
 
 visibility("//...")
 
@@ -59,7 +60,8 @@ ROOT="$PWD"
 SCRATCH="$ROOT/%{scratch}"
 """
 
-# Bootstrap mode a: prebuilt busybox — applet symlink farm on PATH.
+# Bootstrap mode a: prebuilt BusyBox applet symlink farm on PATH. If the
+# selected shell is not BusyBox, _preamble replaces the farm's `sh` link.
 _BUSYBOX_BOOTSTRAP = """BB="$ROOT/%{busybox}"
 "$BB" mkdir -p "$SCRATCH/tools" "$SCRATCH/build" "$SCRATCH/tmp"
 for a in $("$BB" --list); do "$BB" ln -sf "$BB" "$SCRATCH/tools/$a"; done
@@ -121,8 +123,8 @@ def _common_attrs():
     #
     # userland / compiler_seed have no defaults: stage-2+ targets must
     # pass a from-source userland explicitly, and only stage-0/1 targets
-    # may reference a prebuilt compiler seed. The busybox default covers
-    # the bootstrap tier.
+    # may reference a prebuilt compiler seed. bootstrap_shell selects the
+    # shell used by the bootstrap tier; BusyBox remains its utility farm.
     return {
         "userland": attr.label(
             allow_single_file = True,
@@ -133,6 +135,12 @@ def _common_attrs():
             allow_single_file = True,
             cfg = "exec",
             default = Label("//internal:busybox"),
+        ),
+        "bootstrap_shell": attr.label(
+            cfg = "exec",
+            default = Label("//internal:bootstrap_shell"),
+            providers = [ShellSeedInfo],
+            doc = "Selected prebuilt shell for bootstrap-tier actions.",
         ),
         "compiler_seed": attr.label(
             cfg = "exec",
@@ -184,7 +192,7 @@ def _preamble(ctx, scratch, extra_path_dirs):
 
     seed = ctx.attr.compiler_seed[CompilerSeedInfo] if ctx.attr.compiler_seed else None
     if seed and ctx.file.userland:
-        fail("compiler_seed is only valid in the BusyBox-backed stage-0/1 bootstrap")
+        fail("compiler_seed is only valid in the stage-0/1 bootstrap")
     seed_roots = {}
     if seed:
         # Compiler commands use stable scratch-local copies, rather than
@@ -210,6 +218,11 @@ def _preamble(ctx, scratch, extra_path_dirs):
             "busybox": ctx.file.busybox.path,
             "path": path + ":" if path else "",
         })
+        shell = ctx.attr.bootstrap_shell[ShellSeedInfo]
+        if shell.executable.path != ctx.file.busybox.path:
+            text += '"$BB" ln -sf "$ROOT"/{} "$SCRATCH/tools/sh"\n'.format(
+                _shell_single_quote(shell.executable.path),
+            )
         bindir = '"$SCRATCH"/tools'
 
     build_cc = ctx.attr.build_cc
@@ -259,10 +272,14 @@ fi
     return text
 
 def _common_inputs(ctx):
-    # The shell is either the from-source userland tree or the prebuilt
-    # busybox — never both, so userland-mode actions have no prebuilt
-    # binary among their inputs.
-    inputs = [ctx.file.userland] if ctx.file.userland else [ctx.file.busybox]
+    # A source-built userland and the prebuilt bootstrap inputs are mutually
+    # exclusive, so userland-mode actions receive neither shell seed nor
+    # BusyBox among their inputs.
+    if ctx.file.userland:
+        inputs = [ctx.file.userland]
+    else:
+        inputs = [ctx.file.busybox]
+        inputs += ctx.attr.bootstrap_shell[ShellSeedInfo].files.to_list()
     if ctx.attr.compiler_seed:
         inputs += ctx.attr.compiler_seed[CompilerSeedInfo].files.to_list()
     return inputs
@@ -278,9 +295,10 @@ def _run_shell(ctx, script, inputs, outputs, mnemonic, progress_message):
             progress_message = progress_message,
         )
     else:
+        shell = ctx.attr.bootstrap_shell[ShellSeedInfo]
         ctx.actions.run(
-            executable = ctx.file.busybox,
-            arguments = ["sh", "-c", script],
+            executable = shell.executable,
+            arguments = shell.args + ["-c", script],
             inputs = inputs,
             outputs = outputs,
             mnemonic = mnemonic,

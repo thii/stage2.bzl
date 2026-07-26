@@ -3,6 +3,7 @@ load(
     "stage2_autotools_build",
     "stage2_compiler_seed",
     "stage2_run",
+    "stage2_shell_seed",
 )
 
 config_setting(
@@ -13,6 +14,16 @@ config_setting(
 config_setting(
     name = "use_zig_seed",
     define_values = {"compiler_seed": "zig"},
+)
+
+config_setting(
+    name = "use_busybox_shell_seed",
+    define_values = {"shell_seed": "busybox"},
+)
+
+config_setting(
+    name = "use_toybox_shell_seed",
+    define_values = {"shell_seed": "toybox"},
 )
 
 alias(
@@ -35,6 +46,30 @@ alias(
             ":use_zig_seed": ":zig_compiler_seed_aarch64",
         },
         no_match_error = "set --define=compiler_seed to muslcc or zig",
+    ),
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "shell_seed_x86_64",
+    actual = select(
+        {
+            ":use_busybox_shell_seed": "@stage2.bzl//internal:default_shell_seed_x86_64",
+            ":use_toybox_shell_seed": ":toybox_shell_seed_x86_64",
+        },
+        no_match_error = "set --define=shell_seed to busybox or toybox",
+    ),
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "shell_seed_aarch64",
+    actual = select(
+        {
+            ":use_busybox_shell_seed": "@stage2.bzl//internal:default_shell_seed_aarch64",
+            ":use_toybox_shell_seed": ":toybox_shell_seed_aarch64",
+        },
+        no_match_error = "set --define=shell_seed to busybox or toybox",
     ),
     visibility = ["//visibility:public"],
 )
@@ -79,6 +114,18 @@ stage2_compiler_seed(
             "zig",
         ),
     },
+)
+
+stage2_shell_seed(
+    name = "toybox_shell_seed_x86_64",
+    args = ["sh"],
+    executable = "@toybox_shell_seed_x86_64//file",
+)
+
+stage2_shell_seed(
+    name = "toybox_shell_seed_aarch64",
+    args = ["sh"],
+    executable = "@toybox_shell_seed_aarch64//file",
 )
 
 stage2_autotools_build(

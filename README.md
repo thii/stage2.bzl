@@ -5,10 +5,9 @@ in an empty Linux sandbox. It provides a source-built compiler, shell,
 userland, and common build tools; it can also drive conventional package
 builds.
 
-From stage 2 onward, library-owned actions use no prebuilt executable as
-build machinery. The complete bootstrap is not seedless: a configurable
-compiler seed (musl.cc GCC by default) and Alpine BusyBox are used below that
-boundary.
+From stage 2 onward, library-owned actions use no prebuilt executable as build
+machinery. Below that boundary, configurable compiler and shell seeds bootstrap
+the source-built tools. The defaults are musl.cc GCC and Alpine BusyBox.
 
 ## Requirements and setup
 
@@ -175,6 +174,41 @@ itself; combine it with a complete static sysroot/runtime and describe both
 roots. Exact Clang target, sysroot, linker, and runtime flags depend on that
 companion bundle.
 
+## Shell seeds
+
+The default bootstrap shell is Alpine BusyBox. A root module may select another
+self-contained static shell:
+
+```starlark
+load("@stage2.bzl", "stage2_shell_seed")
+
+stage2_shell_seed(
+    name = "my_shell",
+    executable = "@my_shell_archive//:shell",
+    args = ["sh"],
+)
+```
+
+Select it for either architecture in `MODULE.bazel`:
+
+```starlark
+shell_seeds = use_extension(
+    "@stage2.bzl//:extensions.bzl",
+    "shell_seeds",
+)
+shell_seeds.seed(
+    arch = "x86_64",
+    target = "//:my_shell",
+)
+```
+
+`args` precede `-c` for the top-level action; use `["sh"]` for a multicall
+binary such as BusyBox or Toybox and `[]` for Bash. The executable must also
+act as a shell when invoked through a symlink named `sh`, without those
+arguments, because nested build scripts use `/bin/sh`. BusyBox remains on
+`PATH` as the utility fallback; the selected shell may also provide builtins or
+multicall applets.
+
 ## Userlands
 
 The default userland contains Bash, coreutils, sed, grep, findutils, diffutils,
@@ -204,24 +238,15 @@ is not proof.
 
 ## Trust boundary
 
-- Stage 0: the selected compiler seed and BusyBox build GNU Make.
-- Stage 1: the compiler seed, BusyBox, and stage-0 Make build the first static
-  binutils/musl/GCC toolchain. That compiler then builds the source-based
-  userland, while BusyBox and stage-0 Make still drive the actions.
-- Stage 2: the stage-1 compiler and first source-built userland rebuild static
-  binutils, musl, and GCC. That toolchain rebuilds the userland, then one
-  closing toolchain pass links against the rebuilt runtime. The closing
-  compiler and userland trees drive later builds.
+- Stage 0: the compiler and shell seeds, with BusyBox fallback utilities, build
+  GNU Make.
+- Stage 1: those seeds and Make build the first compiler and source userland.
+- Stage 2: the stage-1 compiler and userland rebuild both; a closing compiler
+  pass links against the rebuilt runtime.
 
-The public closing outputs are compiler-seed-independent with respect to the
-two diverse seeds exercised by CI. On `x86_64` and `aarch64`, CI repeats the
-bootstrap from musl.cc and Zig; the closing compiler, userland, and GNU Hello
-trees must have identical paths, modes, symlinks, and file bytes, and the raw
-Hello output must be byte-identical.
-
-This is a trust-minimized claim, not a trustless one. It detects seed-specific
-influence; it does not validate the source archives, Bazel, or the host kernel,
-or rule out a compromise shared by both seeds.
+CI varies the compiler seed between musl.cc and Zig and the shell seed between
+BusyBox and Toybox; the closing compiler, userland, and GNU Hello outputs are
+byte-identical on `x86_64` and `aarch64`.
 
 ## Caveats
 

@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   consumer:
-    name: External consumer seed equivalence (${{ matrix.arch }})
+    name: External consumer bootstrap seed equivalence (${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
@@ -64,13 +64,23 @@ jobs:
             bazel-disk-e2e-v4-zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion') }}-${{ hashFiles('.bazelignore', '.bazelrc', '.bazelversion', 'BUILD.bazel', 'MODULE.bazel', 'MODULE.bazel.lock', 'extensions.bzl', 'stage2.bzl', 'internal/**', 'trees/**', 'e2e/consumer/.bazelrc', 'e2e/consumer/**', '.github/workflows/ci.yml') }}-
             bazel-disk-e2e-v4-zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion') }}-
 
+      - name: Restore Toybox Bazel results
+        id: toybox_cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/stage2-e2e-disk-cache/toybox
+          key: bazel-disk-e2e-v4-toybox-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion') }}-${{ hashFiles('.bazelignore', '.bazelrc', '.bazelversion', 'BUILD.bazel', 'MODULE.bazel', 'MODULE.bazel.lock', 'extensions.bzl', 'stage2.bzl', 'internal/**', 'trees/**', 'e2e/consumer/.bazelrc', 'e2e/consumer/**', '.github/workflows/ci.yml') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            bazel-disk-e2e-v4-toybox-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion') }}-${{ hashFiles('.bazelignore', '.bazelrc', '.bazelversion', 'BUILD.bazel', 'MODULE.bazel', 'MODULE.bazel.lock', 'extensions.bzl', 'stage2.bzl', 'internal/**', 'trees/**', 'e2e/consumer/.bazelrc', 'e2e/consumer/**', '.github/workflows/ci.yml') }}-
+            bazel-disk-e2e-v4-toybox-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion') }}-
+
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.19.0
         with:
           bazelisk-cache: true
 
-      # Leave time to save completed actions when a cold pair needs another run.
-      - name: Build both seed lineages and compare their outputs
+      # Leave time to save completed actions when a cold run needs another try.
+      - name: Build three bootstrap seed lineages and compare their outputs
         id: build
         timeout-minutes: 315
         working-directory: e2e/consumer
@@ -94,3 +104,10 @@ jobs:
         with:
           path: ${{ runner.temp }}/stage2-e2e-disk-cache/zig
           key: ${{ steps.zig_cache.outputs.cache-primary-key }}
+
+      - name: Save Toybox Bazel results
+        if: ${{ !cancelled() && (steps.build.outcome == 'success' || steps.build.outcome == 'failure') }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/stage2-e2e-disk-cache/toybox
+          key: ${{ steps.toybox_cache.outputs.cache-primary-key }}

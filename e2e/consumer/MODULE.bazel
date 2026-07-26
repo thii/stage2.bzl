@@ -17,7 +17,37 @@ compiler_seeds.seed(
     target = "//:compiler_seed_aarch64",
 )
 
+shell_seeds = use_extension("@stage2.bzl//:extensions.bzl", "shell_seeds")
+shell_seeds.seed(
+    arch = "x86_64",
+    target = "//:shell_seed_x86_64",
+)
+shell_seeds.seed(
+    arch = "aarch64",
+    target = "//:shell_seed_aarch64",
+)
+
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+# A second static shell seed exercises the bootstrap independently of the
+# default Alpine BusyBox seed.
+http_file(
+    name = "toybox_shell_seed_x86_64",
+    downloaded_file_path = "toybox",
+    executable = True,
+    sha256 = "836ba9d6821fb3bcd85f4e2c511115d677930796ef76418799e0df95526d4e65",
+    urls = ["https://landley.net/toybox/downloads/binaries/0.8.14/toybox-x86_64"],
+)
+
+http_file(
+    name = "toybox_shell_seed_aarch64",
+    downloaded_file_path = "toybox",
+    executable = True,
+    sha256 = "223b5ff5929371225d0bc62fb3b99a148692295fb6f85ad86bb924f689a55ea4",
+    urls = ["https://landley.net/toybox/downloads/binaries/0.8.14/toybox-aarch64"],
+)
 
 # Zig ships the static compiler, linker, musl sysroot, and runtime needed by
 # the seed contract; its ar and ranlib subcommands bootstrap GNU binutils.

@@ -18,7 +18,11 @@ trap shutdown_bazel EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-mkdir -p "$DISK_CACHE_ROOT/muslcc" "$DISK_CACHE_ROOT/zig" "$STAGE2_ARTIFACTS"
+mkdir -p \
+  "$DISK_CACHE_ROOT/muslcc" \
+  "$DISK_CACHE_ROOT/zig" \
+  "$DISK_CACHE_ROOT/toybox" \
+  "$STAGE2_ARTIFACTS"
 
 canonicalize_tree() {
   local source="$1"
@@ -38,11 +42,14 @@ canonicalize_tree() {
     /usr/bin/gzip -n >"$destination"
 }
 
-build_seed() {
-  local seed="$1"
-  local artifact_dir="$STAGE2_ARTIFACTS/$seed"
+build_lineage() {
+  local lineage="$1"
+  local compiler_seed="$2"
+  local shell_seed="$3"
+  local disk_cache="$4"
+  local artifact_dir="$STAGE2_ARTIFACTS/$lineage"
   mkdir -p "$artifact_dir"
-  mkdir -p "$DISK_CACHE_ROOT/$seed"
+  mkdir -p "$DISK_CACHE_ROOT/$disk_cache"
 
   local host_arch
   case "$(/usr/bin/uname -m)" in
@@ -54,30 +61,55 @@ build_seed() {
       ;;
   esac
 
-  local first_seed_input
-  first_seed_input="$(
+  local compiler_seed_input
+  compiler_seed_input="$(
     "$BAZEL" --output_base="$STAGE2_OUTPUT_BASE" cquery \
       --ui_event_filters=-info,-warning \
       --noshow_progress \
-      --define=compiler_seed="$seed" \
+      --define=compiler_seed="$compiler_seed" \
+      --define=shell_seed="$shell_seed" \
       --repository_cache="$REPOSITORY_CACHE" \
       --output=files \
       "config(//:compiler_seed_$host_arch, target)" |
       /usr/bin/sed -n '1p'
   )"
-  case "$seed:$first_seed_input" in
+  case "$compiler_seed:$compiler_seed_input" in
     muslcc:*musl_toolchain_linux_*) ;;
     zig:*zig_compiler_seed_*) ;;
     *)
-      echo "$seed resolved to the wrong compiler seed: $first_seed_input" >&2
+      echo "$compiler_seed resolved to the wrong compiler seed: $compiler_seed_input" >&2
       return 1
       ;;
   esac
 
-  echo "Building the $seed compiler-seed lineage from $first_seed_input"
+  local shell_seed_input
+  shell_seed_input="$(
+    "$BAZEL" --output_base="$STAGE2_OUTPUT_BASE" cquery \
+      --ui_event_filters=-info,-warning \
+      --noshow_progress \
+      --define=compiler_seed="$compiler_seed" \
+      --define=shell_seed="$shell_seed" \
+      --repository_cache="$REPOSITORY_CACHE" \
+      --output=files \
+      "config(//:shell_seed_$host_arch, target)" |
+      /usr/bin/sed -n '1p'
+  )"
+  case "$shell_seed:$shell_seed_input" in
+    busybox:*busybox_linux_*) ;;
+    toybox:*toybox_shell_seed_*) ;;
+    *)
+      echo "$shell_seed resolved to the wrong shell seed: $shell_seed_input" >&2
+      return 1
+      ;;
+  esac
+
+  echo "Building the $lineage bootstrap-seed lineage"
+  echo "  compiler: $compiler_seed_input"
+  echo "  shell: $shell_seed_input"
   "$BAZEL" --output_base="$STAGE2_OUTPUT_BASE" build \
-    --define=compiler_seed="$seed" \
-    --disk_cache="$DISK_CACHE_ROOT/$seed" \
+    --define=compiler_seed="$compiler_seed" \
+    --define=shell_seed="$shell_seed" \
+    --disk_cache="$DISK_CACHE_ROOT/$disk_cache" \
     --jobs=1 \
     --repository_cache="$REPOSITORY_CACHE" \
     //:hello-output \
@@ -87,7 +119,8 @@ build_seed() {
   local execroot
   execroot="$(
     "$BAZEL" --output_base="$STAGE2_OUTPUT_BASE" info \
-      --define=compiler_seed="$seed" \
+      --define=compiler_seed="$compiler_seed" \
+      --define=shell_seed="$shell_seed" \
       execution_root
   )"
 
@@ -98,7 +131,8 @@ build_seed() {
       "$BAZEL" --output_base="$STAGE2_OUTPUT_BASE" cquery \
         --ui_event_filters=-info,-warning \
         --noshow_progress \
-        --define=compiler_seed="$seed" \
+        --define=compiler_seed="$compiler_seed" \
+        --define=shell_seed="$shell_seed" \
         --output=files \
         "config($label, target)"
     )"
@@ -117,7 +151,8 @@ TREES
     "$BAZEL" --output_base="$STAGE2_OUTPUT_BASE" cquery \
       --ui_event_filters=-info,-warning \
       --noshow_progress \
-      --define=compiler_seed="$seed" \
+      --define=compiler_seed="$compiler_seed" \
+      --define=shell_seed="$shell_seed" \
       --output=files \
       "config(//:hello-output, target)"
   )"
@@ -127,47 +162,53 @@ TREES
 
 # Keep the absolute execroot identical so build paths cannot distinguish the
 # lineages. Expunging between them prevents Bazel's local action cache from
-# crossing the boundary; the persistent disk caches are also split by seed.
-build_seed muslcc
+# crossing the boundary; the persistent disk caches are also split by lineage.
+build_lineage muslcc-busybox muslcc busybox muslcc
 "$BAZEL" --output_base="$STAGE2_OUTPUT_BASE" clean --expunge
-build_seed zig
+build_lineage zig-busybox zig busybox zig
+"$BAZEL" --output_base="$STAGE2_OUTPUT_BASE" clean --expunge
+build_lineage muslcc-toybox muslcc toybox toybox
 shutdown_bazel
 
 comparison_failed=0
-for name in cc hello userland; do
-  muslcc="$STAGE2_ARTIFACTS/muslcc/$name.tar.gz"
-  zig="$STAGE2_ARTIFACTS/zig/$name.tar.gz"
-  sha256sum "$muslcc" "$zig"
-  if ! cmp -s "$muslcc" "$zig"; then
-    comparison_failed=1
-    mkdir -p "$STAGE2_ARTIFACTS/muslcc-$name"
-    mkdir -p "$STAGE2_ARTIFACTS/zig-$name"
-    tar -xzf "$muslcc" -C "$STAGE2_ARTIFACTS/muslcc-$name"
-    tar -xzf "$zig" -C "$STAGE2_ARTIFACTS/zig-$name"
-    diff -qr --no-dereference \
-      "$STAGE2_ARTIFACTS/muslcc-$name" \
-      "$STAGE2_ARTIFACTS/zig-$name" || true
-    diff -u \
-      <(tar --numeric-owner --full-time -tvzf "$muslcc") \
-      <(tar --numeric-owner --full-time -tvzf "$zig") || true
-  fi
-done
+compare_to_baseline() {
+  local alternate="$1"
+  local name
 
-sha256sum \
-  "$STAGE2_ARTIFACTS/muslcc/hello-output" \
-  "$STAGE2_ARTIFACTS/zig/hello-output"
-if ! cmp -s \
-  "$STAGE2_ARTIFACTS/muslcc/hello-output" \
-  "$STAGE2_ARTIFACTS/zig/hello-output"; then
-  comparison_failed=1
-  diff -u \
-    "$STAGE2_ARTIFACTS/muslcc/hello-output" \
-    "$STAGE2_ARTIFACTS/zig/hello-output" || true
-fi
+  for name in cc hello userland; do
+    local baseline_archive="$STAGE2_ARTIFACTS/muslcc-busybox/$name.tar.gz"
+    local alternate_archive="$STAGE2_ARTIFACTS/$alternate/$name.tar.gz"
+    sha256sum "$baseline_archive" "$alternate_archive"
+    if ! cmp -s "$baseline_archive" "$alternate_archive"; then
+      comparison_failed=1
+      mkdir -p "$STAGE2_ARTIFACTS/muslcc-busybox-$name"
+      mkdir -p "$STAGE2_ARTIFACTS/$alternate-$name"
+      tar -xzf "$baseline_archive" -C "$STAGE2_ARTIFACTS/muslcc-busybox-$name"
+      tar -xzf "$alternate_archive" -C "$STAGE2_ARTIFACTS/$alternate-$name"
+      diff -qr --no-dereference \
+        "$STAGE2_ARTIFACTS/muslcc-busybox-$name" \
+        "$STAGE2_ARTIFACTS/$alternate-$name" || true
+      diff -u \
+        <(tar --numeric-owner --full-time -tvzf "$baseline_archive") \
+        <(tar --numeric-owner --full-time -tvzf "$alternate_archive") || true
+    fi
+  done
+
+  local baseline_output="$STAGE2_ARTIFACTS/muslcc-busybox/hello-output"
+  local alternate_output="$STAGE2_ARTIFACTS/$alternate/hello-output"
+  sha256sum "$baseline_output" "$alternate_output"
+  if ! cmp -s "$baseline_output" "$alternate_output"; then
+    comparison_failed=1
+    diff -u "$baseline_output" "$alternate_output" || true
+  fi
+}
+
+compare_to_baseline zig-busybox
+compare_to_baseline muslcc-toybox
 
 if ((comparison_failed)); then
-  echo "musl.cc and Zig produced different final outputs" >&2
+  echo "The bootstrap seed lineages produced different final outputs" >&2
   exit 1
 fi
 
-echo "musl.cc and Zig produced identical canonicalized trees and Hello output"
+echo "All three bootstrap seed lineages produced identical canonicalized trees and Hello output"

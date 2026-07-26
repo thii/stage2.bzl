@@ -132,6 +132,8 @@ def _reject_bootstrap_attrs(wrapper, kwargs):
         fail("{} does not accept make; provide bin/make through userland instead".format(wrapper))
     if "compiler_seed" in kwargs:
         fail("{} does not accept compiler_seed; select it through the compiler_seeds module extension".format(wrapper))
+    if "bootstrap_shell" in kwargs:
+        fail("{} does not accept bootstrap_shell; select it through the shell_seeds module extension".format(wrapper))
 
 def stage2_autotools_build(use_default_cc = True, stage_cc = True, **kwargs):
     """autotools_build preconfigured for the stage-2 toolchain + userland.
@@ -189,8 +191,10 @@ def stage2_run(inputs = {}, extra_inputs = [], **kwargs):
 
 def stage2_tree_merge(**kwargs):
     """tree_merge preconfigured with the default stage-2 userland."""
+    _reject_bootstrap_attrs("stage2_tree_merge", kwargs)
     tree_merge(**(USERLAND_KWARGS | kwargs))
 
 def stage2_dist_tarball(**kwargs):
     """dist_tarball preconfigured with the default stage-2 userland."""
+    _reject_bootstrap_attrs("stage2_dist_tarball", kwargs)
     dist_tarball(**(USERLAND_KWARGS | kwargs))

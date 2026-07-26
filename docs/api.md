@@ -75,6 +75,47 @@ without relying on host executables or libraries. They must produce static
 configure tests and build-time programs. A static compiler executable alone is
 insufficient: the bundle also needs a compatible C/C++ sysroot and runtime.
 
+## Shell seed
+
+### `stage2_shell_seed`
+
+Describes the prebuilt shell used by stage-0 and stage-1 bootstrap actions.
+
+```starlark
+load("@stage2.bzl", "stage2_shell_seed")
+
+stage2_shell_seed(
+    name = name,
+    executable = executable,
+    args = [],
+    inputs = [],
+)
+```
+
+- `executable` is a self-contained static shell.
+- `args` precede `-c` for the top-level action. Use `["sh"]` for a multicall
+  executable such as BusyBox or Toybox and `[]` for Bash. Nested build scripts
+  invoke the executable through a symlink named `sh` without these arguments,
+  so it must dispatch as a shell from that basename.
+- `inputs` declares any additional files needed to run the shell.
+
+Select it from the root `MODULE.bazel`:
+
+```starlark
+shell_seeds = use_extension(
+    "@stage2.bzl//:extensions.bzl",
+    "shell_seeds",
+)
+shell_seeds.seed(
+    arch = "x86_64",
+    target = "//bootstrap:shell_seed",
+)
+```
+
+Only root tags are honored. An unspecified architecture retains Alpine BusyBox.
+BusyBox remains on `PATH` as the external utility fallback. The selected shell
+may also provide builtins or multicall applets that take precedence.
+
 ## Build macros
 
 ### `stage2_autotools_build`

@@ -193,7 +193,7 @@
   "moduleExtensions": {
     "@@stage2.bzl+//:extensions.bzl%compiler_seeds": {
       "general": {
-        "bzlTransitiveDigest": "BO8I2voe9YS+hLGdAT9HbTA2vh6fFno+L6Bo84SiM9M=",
+        "bzlTransitiveDigest": "WzUWc+qRj0/WrRYDShWJJHmPgL8iMALJo2ehP7Cz7MQ=",
         "usagesDigest": "7AF39mExAwowmM9aEXVjLuV7G8bZOIa86rbRvWgLkII=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -202,6 +202,22 @@
             "attributes": {
               "aarch64": "@@//:compiler_seed_aarch64",
               "x86_64": "@@//:compiler_seed_x86_64"
+            }
+          }
+        }
+      }
+    },
+    "@@stage2.bzl+//:extensions.bzl%shell_seeds": {
+      "general": {
+        "bzlTransitiveDigest": "WzUWc+qRj0/WrRYDShWJJHmPgL8iMALJo2ehP7Cz7MQ=",
+        "usagesDigest": "HC62Ohzg5gqh625iN99nMFzW4p8T9wExOEUwAoiwLqk=",
+        "recordedInputs": [],
+        "generatedRepoSpecs": {
+          "stage2_shell_seeds": {
+            "repoRuleId": "@@stage2.bzl+//:extensions.bzl%_shell_seed_config_repo",
+            "attributes": {
+              "aarch64": "@@//:shell_seed_aarch64",
+              "x86_64": "@@//:shell_seed_x86_64"
             }
           }
         }
