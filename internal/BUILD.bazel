@@ -482,6 +482,9 @@ autotools_build(
         ":musl-s2-final",
     ],
     path_trees = [":host-gcc-s2"],
+    # Keep cold and cache-materialized TreeArtifacts identical: GCC's
+    # installdirs target leaves an empty share/man/man3 directory.
+    prune_empty_dirs = True,
     tool_subdir = _TOOL_SUBDIR,
     userland = ":userland-s2-final",
 )

@@ -379,6 +379,8 @@ def _autotools_build_impl(ctx):
     install_targets = ctx.attr.install_targets or "install"
     script += _run("make -j {} MAKEINFO=true{}".format(ctx.attr.jobs, make_targets), "make.log", tail = "100")
     script += _run("make {} MAKEINFO=true".format(install_targets), "install.log")
+    if ctx.attr.prune_empty_dirs:
+        script += 'find "$ROOT/{}" -depth -mindepth 1 -type d -empty -delete\n'.format(out.path)
 
     _run_shell(
         ctx,
@@ -424,6 +426,9 @@ autotools_build = rule(
         ),
         "install_targets": attr.string(
             doc = "Targets for the install step instead of 'install' (e.g. 'install-gcc').",
+        ),
+        "prune_empty_dirs": attr.bool(
+            doc = "Remove empty directories from the installed output tree.",
         ),
     },
     doc = "Runs configure/make/make-install of an autotools tree in the hermetic sandbox.",
