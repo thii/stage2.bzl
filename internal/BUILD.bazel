@@ -1,5 +1,6 @@
 # Private implementation graph; public aliases live in //trees.
 
+load(":bootstrap_tools.bzl", "source_bootstrap_tools")
 load(":build_defs.bzl", "autotools_build", "make_bootstrap", "tree_merge")
 load(":compiler_seed.bzl", "stage2_compiler_seed")
 load(":shell_seed.bzl", "stage2_shell_seed")
@@ -21,24 +22,12 @@ package_group(
 
 _NO_MATCH = "this workspace's hermetic prerequisites are only wired for x86_64/aarch64 Linux hosts"
 
-alias(
-    name = "busybox",
-    actual = select(
-        {
-            "@platforms//cpu:aarch64": "@busybox_linux_arm64//:bin/busybox.static",
-            "@platforms//cpu:x86_64": "@busybox_linux_x64//:bin/busybox.static",
-        },
-        no_match_error = _NO_MATCH,
-    ),
-    # Public wrappers instantiate rules in the consumer's package. The
-    # attribute remains present even when a source-built userland supersedes it.
-    visibility = ["//visibility:public"],
-)
-
 stage2_shell_seed(
     name = "default_shell_seed_aarch64",
     args = ["sh"],
     executable = "@busybox_linux_arm64//:bin/busybox.static",
+    tools_args = ["--list"],
+    tools_executable = "@busybox_linux_arm64//:bin/busybox.static",
     visibility = ["//visibility:public"],
 )
 
@@ -46,6 +35,8 @@ stage2_shell_seed(
     name = "default_shell_seed_x86_64",
     args = ["sh"],
     executable = "@busybox_linux_x64//:bin/busybox.static",
+    tools_args = ["--list"],
+    tools_executable = "@busybox_linux_x64//:bin/busybox.static",
     visibility = ["//visibility:public"],
 )
 
@@ -106,6 +97,15 @@ alias(
         },
         no_match_error = _NO_MATCH,
     ),
+)
+
+source_bootstrap_tools(
+    name = "source-bootstrap-tools",
+    compiler_seed = ":compiler_seed",
+    shell_seed = ":bootstrap_shell",
+    tags = ["manual"],
+    toybox_main = "@toybox_src//:main.c",
+    toybox_srcs = "@toybox_src//:srcs",
 )
 
 # The self-hosted host toolchain targets <arch>-unknown-linux-musl (same
@@ -262,9 +262,9 @@ autotools_build(
 
 # ---------------------------------------------------------------------------
 # Tooling rebuilt from source by stage 1: make and the first GNU userland.
-# These builds still use the selected prebuilt shell seed (a shell cannot be
-# built without a shell); this userland lets stage 2 continue without any
-# prebuilt executable among an action's direct inputs.
+# These builds still use the selected shell seed and bootstrap utilities (a
+# shell cannot be built without a shell); this userland lets stage 2 continue
+# without any prebuilt executable among an action's direct inputs.
 #
 # -std=gnu17 throughout: several of these packages bundle gnulib
 # vintages with K&R declarations that GCC 15's C23 default rejects.
@@ -367,7 +367,7 @@ tree_merge(
 # ---------------------------------------------------------------------------
 # Stage 2: the same host toolchain rebuilt by stage 1, running on the
 # from-source GNU userland. No prebuilt binary is an input to these
-# actions — the compiler seed, shell seed, and BusyBox are absent.
+# actions — the compiler seed, shell seed, and bootstrap utilities are absent.
 # ---------------------------------------------------------------------------
 
 autotools_build(

@@ -42,6 +42,48 @@ canonicalize_tree() {
     /usr/bin/gzip -n >"$destination"
 }
 
+assert_no_busybox_in_bash_lineage() {
+  local compiler_seed="$1"
+  local shell_seed="$2"
+  local closure
+  closure="${3:-deps(set(//:hello //:hello-output @stage2.bzl//trees:cc @stage2.bzl//trees:default_userland))}"
+
+  local busybox_dependencies
+  busybox_dependencies="$(
+    "$BAZEL" --output_base="$STAGE2_OUTPUT_BASE" cquery \
+      --ui_event_filters=-info,-warning \
+      --noshow_progress \
+      --define=compiler_seed="$compiler_seed" \
+      --define=shell_seed="$shell_seed" \
+      --repository_cache="$REPOSITORY_CACHE" \
+      --output=label \
+      "filter('//internal:busybox|busybox_linux_|busybox[.]static', $closure)"
+  )"
+  if [[ -n "$busybox_dependencies" ]]; then
+    echo "BusyBox remains in the Bash lineage's configured dependency closure:" >&2
+    echo "$busybox_dependencies" >&2
+    return 1
+  fi
+
+  local busybox_actions
+  busybox_actions="$(
+    "$BAZEL" --output_base="$STAGE2_OUTPUT_BASE" aquery \
+      --ui_event_filters=-info,-warning \
+      --noshow_progress \
+      --define=compiler_seed="$compiler_seed" \
+      --define=shell_seed="$shell_seed" \
+      --repository_cache="$REPOSITORY_CACHE" \
+      --output=text \
+      "inputs('.*(busybox_linux_(arm64|x64)|bin/busybox[.]static).*', $closure)" |
+      /usr/bin/sed -n '1,80p'
+  )"
+  if [[ -n "$busybox_actions" ]]; then
+    echo "BusyBox remains an action input in the Bash lineage:" >&2
+    echo "$busybox_actions" >&2
+    return 1
+  fi
+}
+
 build_lineage() {
   local lineage="$1"
   local compiler_seed="$2"
@@ -117,6 +159,10 @@ build_lineage() {
     @stage2.bzl//trees:cc \
     @stage2.bzl//trees:default_userland
 
+  if [[ "$shell_seed" == "bash" ]]; then
+    assert_no_busybox_in_bash_lineage "$compiler_seed" "$shell_seed"
+  fi
+
   local execroot
   execroot="$(
     "$BAZEL" --output_base="$STAGE2_OUTPUT_BASE" info \
@@ -173,6 +219,19 @@ build_lineage muslcc-busybox muslcc busybox muslcc
 build_lineage zig-busybox zig busybox zig
 "$BAZEL" --output_base="$STAGE2_OUTPUT_BASE" clean --expunge
 build_lineage muslcc-bash muslcc bash bash
+
+echo "Building the Zig+Bash bootstrap smoke target"
+"$BAZEL" --output_base="$STAGE2_OUTPUT_BASE" build \
+  --define=compiler_seed=zig \
+  --define=shell_seed=bash \
+  --disk_cache="$DISK_CACHE_ROOT/zig" \
+  --jobs=1 \
+  --repository_cache="$REPOSITORY_CACHE" \
+  @stage2.bzl//internal:make
+assert_no_busybox_in_bash_lineage \
+  zig \
+  bash \
+  'deps(@stage2.bzl//internal:make)'
 shutdown_bazel
 
 comparison_failed=0

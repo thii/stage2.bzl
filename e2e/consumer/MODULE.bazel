@@ -29,8 +29,8 @@ shell_seeds.seed(
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
-# Debian's static Bash 5.2.37 exercises the bootstrap independently of the
-# default Alpine BusyBox shell.
+# Debian's static Bash 5.2.37 supplies only the alternate shell; stage2.bzl
+# builds the pinned Toybox utilities from source, leaving BusyBox out.
 bash_static_repo = use_repo_rule("//:bash_static_repo.bzl", "bash_static_repo")
 
 bash_static_repo(

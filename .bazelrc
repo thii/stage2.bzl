@@ -7,11 +7,11 @@ build --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 #
 # The sandbox root is completely empty except for declared action inputs.
 # Deliberately NO --sandbox_add_mount_pair: nothing is mounted from the host.
-# Instead, bootstrap actions declare self-contained compiler and shell seeds;
-# static BusyBox supplies their fallback utility applets. Later actions declare
-# a source-built userland. Each preamble exposes only those tools on PATH,
-# links /bin/sh to its declared shell, and pins the environment (see
-# internal/build_defs.bzl).
+# Instead, bootstrap actions declare self-contained compiler and shell seeds.
+# The shell seed either supplies its utility suite or uses utilities built from
+# source with those two seeds. Later actions declare a source-built userland.
+# Each preamble exposes only those tools on PATH, links /bin/sh to its declared
+# shell, and pins the environment (see internal/build_defs.bzl).
 # ---------------------------------------------------------------------------
 common --enable_platform_specific_config
 build:linux --experimental_use_hermetic_linux_sandbox

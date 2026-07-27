@@ -134,6 +134,8 @@ def _reject_bootstrap_attrs(wrapper, kwargs):
         fail("{} does not accept compiler_seed; select it through the compiler_seeds module extension".format(wrapper))
     if "bootstrap_shell" in kwargs:
         fail("{} does not accept bootstrap_shell; select it through the shell_seeds module extension".format(wrapper))
+    if "source_bootstrap_tools" in kwargs:
+        fail("{} does not accept source_bootstrap_tools; it is selected from the shell-seed contract".format(wrapper))
 
 def stage2_autotools_build(use_default_cc = True, stage_cc = True, **kwargs):
     """autotools_build preconfigured for the stage-2 toolchain + userland.

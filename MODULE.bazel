@@ -50,8 +50,7 @@ http_archive(
 # tar and gzip (plus gawk below) are compiled by the stage-1 toolchain
 # into the from-source userland (//internal:userland-s2) that every
 # action from stage 2 onward runs on, so no prebuilt binary reaches any
-# shipped-artifact action. The prebuilt Alpine busybox is bootstrap-only
-# (stage 0/1 and the userland package builds themselves).
+# shipped-artifact action. All configured seeds are bootstrap-only.
 http_archive(
     name = "bash_src",
     build_file_content = _SRC_TREE_BUILD,
@@ -289,8 +288,6 @@ gcc_combined_src_repo = use_repo_rule("//internal:gcc_combined_repo.bzl", "gcc_c
 
 gcc_combined_src_repo(
     name = "gcc_combined_src",
-    busybox_arm64 = "@busybox_linux_arm64//:bin/busybox.static",
-    busybox_x64 = "@busybox_linux_x64//:bin/busybox.static",
 )
 
 # Default fully static compiler seeds from musl.cc (GCC 11.2.1). A root module
@@ -353,7 +350,34 @@ exports_files(["bin/gcc"])
     ],
 )
 
-# Alpine busybox-static packages (.apk files are tar.gz archives).
+# Toybox's source tree contains a checked-in prerequisite configuration that
+# can be compiled with only a C compiler. Non-BusyBox shell seeds use it to
+# construct their bootstrap utilities from source.
+http_archive(
+    name = "toybox_src",
+    build_file_content = """filegroup(
+    name = "srcs",
+    srcs = [
+        "Config.in",
+        "configure",
+        "main.c",
+        "toys.h",
+    ] + glob([
+        "lib/**",
+        "scripts/**",
+        "toys/**",
+    ]),
+    visibility = ["//visibility:public"],
+)
+exports_files(["main.c"])
+""",
+    sha256 = "827e4cdfd69f5da973e00e2a59b30b3c9857fb7fae74c362fd0b4f96be7929b0",
+    strip_prefix = "toybox-0.8.14",
+    urls = ["https://landley.net/toybox/downloads/toybox-0.8.14.tar.gz"],
+)
+
+# Alpine busybox-static packages (.apk files are tar.gz archives). The default
+# shell seed uses one binary as both shell and bootstrap utility suite.
 # Caveat: dl-cdn only serves the current -rN revision of an active branch,
 # so this URL can rot when Alpine 3.22 bumps the package. If the fetch 404s,
 # bump the version/sha256 here, or mirror the pinned apk somewhere durable

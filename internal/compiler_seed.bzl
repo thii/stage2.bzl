@@ -14,7 +14,6 @@ CompilerSeedInfo = provider(
 )
 
 _RESERVED_ENV = [
-    "BB",
     "CC_FOR_BUILD",
     "CONFIG_SHELL",
     "CXX_FOR_BUILD",
@@ -28,6 +27,7 @@ _RESERVED_ENV = [
     "SH",
     "SHELL",
     "TMPDIR",
+    "TOOLS",
     "UL",
 ]
 

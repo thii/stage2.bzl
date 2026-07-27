@@ -10,9 +10,10 @@ modes exist, selected by which attribute a target sets:
     PATH points into the tree. No prebuilt binary is among the action's
     inputs.
   - bootstrap (stage 0/1 and the first userland package builds): a
-    selectable prebuilt shell seed runs the action. Static Alpine BusyBox
-    supplies the utility-applet symlink farm on PATH and is the default
-    shell seed. Building a shell from source still needs a shell.
+    selectable prebuilt shell seed runs the action. A seed may supply its own
+    multicall utility suite; otherwise the selected compiler and shell build
+    Toybox from source first. Alpine BusyBox supplies both roles by default.
+    Building a shell from source still needs a shell.
 
 Common machinery for both modes:
 
@@ -29,7 +30,7 @@ Common machinery for both modes:
     tests and generated tools for a root with no dynamic loader.
   - autoconf quirks: MKDIR_P/INSTALL are pinned in the *environment*
     (autoconf 2.69's race-free-mkdir probe would otherwise fall back to
-    the shebang-executed install-sh under busybox; the GCC/binutils
+    the shebang-executed install-sh under the bootstrap tools; the GCC/binutils
     top-level configure does not forward VAR=VALUE arguments to
     sub-configures, but environment variables pass through).
   - Locale, timezone, source epoch, archive dates, and umask are fixed so
@@ -60,11 +61,11 @@ ROOT="$PWD"
 SCRATCH="$ROOT/%{scratch}"
 """
 
-# Bootstrap mode a: prebuilt BusyBox applet symlink farm on PATH. If the
-# selected shell is not BusyBox, _preamble replaces the farm's `sh` link.
-_BUSYBOX_BOOTSTRAP = """BB="$ROOT/%{busybox}"
-"$BB" mkdir -p "$SCRATCH/tools" "$SCRATCH/build" "$SCRATCH/tmp"
-for a in $("$BB" --list); do "$BB" ln -sf "$BB" "$SCRATCH/tools/$a"; done
+# Bootstrap mode a: selected multicall utility symlink farm on PATH. The
+# preamble supplies its `sh` link explicitly from the selected shell.
+_TOOLS_BOOTSTRAP = """TOOLS="$ROOT/%{tools}"
+"$TOOLS" mkdir -p "$SCRATCH/tools" "$SCRATCH/build" "$SCRATCH/tmp"
+for a in $("$TOOLS" %{list_args}); do "$TOOLS" ln -sf "$TOOLS" "$SCRATCH/tools/$a"; done
 export PATH="%{path}$SCRATCH/tools"
 SH="$SCRATCH/tools/sh"
 """
@@ -124,23 +125,25 @@ def _common_attrs():
     # userland / compiler_seed have no defaults: stage-2+ targets must
     # pass a from-source userland explicitly, and only stage-0/1 targets
     # may reference a prebuilt compiler seed. bootstrap_shell selects the
-    # shell used by the bootstrap tier; BusyBox remains its utility farm.
+    # shell used by the bootstrap tier; a shell without its own utilities uses
+    # source_bootstrap_tools, built from the selected compiler and shell.
     return {
         "userland": attr.label(
             allow_single_file = True,
             cfg = "exec",
-            doc = "From-source userland tree; replaces busybox as shell and PATH.",
-        ),
-        "busybox": attr.label(
-            allow_single_file = True,
-            cfg = "exec",
-            default = Label("//internal:busybox"),
+            doc = "From-source userland tree; replaces bootstrap seeds and PATH.",
         ),
         "bootstrap_shell": attr.label(
             cfg = "exec",
             default = Label("//internal:bootstrap_shell"),
             providers = [ShellSeedInfo],
             doc = "Selected prebuilt shell for bootstrap-tier actions.",
+        ),
+        "source_bootstrap_tools": attr.label(
+            allow_single_file = True,
+            cfg = "exec",
+            default = Label("//internal:source-bootstrap-tools"),
+            doc = "Utilities built from source when the selected shell supplies none.",
         ),
         "compiler_seed": attr.label(
             cfg = "exec",
@@ -214,15 +217,16 @@ def _preamble(ctx, scratch, extra_path_dirs):
         })
         bindir = '"$UL"/bin'
     else:
-        text += _subst(_BUSYBOX_BOOTSTRAP, {
-            "busybox": ctx.file.busybox.path,
-            "path": path + ":" if path else "",
-        })
         shell = ctx.attr.bootstrap_shell[ShellSeedInfo]
-        if shell.executable.path != ctx.file.busybox.path:
-            text += '"$BB" ln -sf "$ROOT"/{} "$SCRATCH/tools/sh"\n'.format(
-                _shell_single_quote(shell.executable.path),
-            )
+        tools = shell.tools_executable or ctx.file.source_bootstrap_tools
+        text += _subst(_TOOLS_BOOTSTRAP, {
+            "list_args": " ".join([_shell_single_quote(arg) for arg in shell.tools_args]),
+            "path": path + ":" if path else "",
+            "tools": tools.path,
+        })
+        text += '"$TOOLS" ln -sf "$ROOT"/{} "$SCRATCH/tools/sh"\n'.format(
+            _shell_single_quote(shell.executable.path),
+        )
         bindir = '"$SCRATCH"/tools'
 
     build_cc = ctx.attr.build_cc
@@ -239,8 +243,8 @@ def _preamble(ctx, scratch, extra_path_dirs):
     if seed:
         text += 'mkdir -p "$SCRATCH/compiler-seed"\n'
         for token in sorted(seed.roots):
-            text += """"$BB" mkdir -p "$SCRATCH/compiler-seed"/{token}
-"$BB" cp -a "$ROOT"/{root}/. "$SCRATCH/compiler-seed"/{token}/
+            text += """"$TOOLS" mkdir -p "$SCRATCH/compiler-seed"/{token}
+"$TOOLS" cp -a "$ROOT"/{root}/. "$SCRATCH/compiler-seed"/{token}/
 """.format(
                 root = _shell_single_quote(seed.roots[token]),
                 token = _shell_single_quote(token),
@@ -263,7 +267,7 @@ def _preamble(ctx, scratch, extra_path_dirs):
             link_path = _expand_seed_template(link, seed_roots)
             link_arg = '"$ROOT"/' + _shell_single_quote(link_path)
             text += """if [ ! -e {link} ] && [ ! -L {link} ]; then
-    "$BB" ln -sf {target} {link}
+    "$TOOLS" ln -sf {target} {link}
 fi
 """.format(
                 link = link_arg,
@@ -272,14 +276,15 @@ fi
     return text
 
 def _common_inputs(ctx):
-    # A source-built userland and the prebuilt bootstrap inputs are mutually
-    # exclusive, so userland-mode actions receive neither shell seed nor
-    # BusyBox among their inputs.
+    # A source-built userland and the bootstrap inputs are mutually exclusive,
+    # so userland-mode actions receive neither seed nor bootstrap utilities.
     if ctx.file.userland:
         inputs = [ctx.file.userland]
     else:
-        inputs = [ctx.file.busybox]
-        inputs += ctx.attr.bootstrap_shell[ShellSeedInfo].files.to_list()
+        shell = ctx.attr.bootstrap_shell[ShellSeedInfo]
+        inputs = shell.files.to_list()
+        if not shell.tools_executable:
+            inputs.append(ctx.file.source_bootstrap_tools)
     if ctx.attr.compiler_seed:
         inputs += ctx.attr.compiler_seed[CompilerSeedInfo].files.to_list()
     return inputs

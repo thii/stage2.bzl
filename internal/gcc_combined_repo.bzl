@@ -12,8 +12,7 @@ Layout produced (repository root = GCC source root):
     newlib/, libgloss/                    from newlib-4.5.0.20241231.tar.gz
 
 In-tree gmp is configured by GCC with assembly disabled (generic C), which
-conveniently also removes gmp's build-time m4 requirement — busybox has no
-m4 applet.
+also removes its build-time m4 requirement.
 """
 
 visibility("//...")
@@ -107,49 +106,26 @@ def _impl(rctx):
         output = "_newlib",
     )
 
-    # Move newlib/ and libgloss/ to the tree root with the hermetically
-    # downloaded busybox, so repository setup needs no host tools.
-    if "linux" not in rctx.os.name.lower():
-        fail("this workspace's hermetic prerequisites only support Linux hosts, not " + rctx.os.name)
-    arch = rctx.os.arch
-    if arch in ["aarch64", "arm64"]:
-        busybox = rctx.attr.busybox_arm64
-    elif arch in ["amd64", "x86_64"]:
-        busybox = rctx.attr.busybox_x64
-    else:
-        fail("unsupported host architecture for the hermetic busybox: {} (supported: x86_64, aarch64)".format(arch))
-    bb = str(rctx.path(busybox))
+    # Bazel's repository API performs the filesystem assembly directly, so
+    # fetching this source tree does not execute a host or prebuilt utility.
     for d in ["newlib", "libgloss"]:
-        res = rctx.execute([bb, "mv", "_newlib/" + d, d])
-        if res.return_code != 0:
-            fail("moving {} into the combined tree failed: {}".format(d, res.stderr))
+        rctx.rename("_newlib/" + d, d)
 
     # Newlib's release tarball also carries headers in its top-level
     # include/ that the target code includes via the shared toplevel
     # include directory (e.g. arm-acle-compat.h for the Arm ports).
-    # Merge them into the GCC tree's include/ without overwriting GCC's
-    # own copies of shared headers.
-    res = rctx.execute([
-        bb,
-        "sh",
-        "-c",
-        "for f in _newlib/include/* _newlib/include/.[!.]*; do " +
-        '[ -e "$f" ] || continue; b="${f##*/}"; ' +
-        '[ -e "include/$b" ] || cp -r "$f" "include/$b"; done',
-    ])
-    if res.return_code != 0:
-        fail("merging newlib toplevel headers failed: " + res.stderr)
-    res = rctx.execute([bb, "rm", "-rf", "_newlib"])
-    if res.return_code != 0:
-        fail("cleaning up newlib scratch dir failed: " + res.stderr)
+    # Merge them into the GCC tree's include/ without overwriting GCC's own
+    # copies of shared headers.
+    include = rctx.path("include")
+    for entry in rctx.path("_newlib/include").readdir():
+        destination = include.get_child(entry.basename)
+        if not destination.exists:
+            rctx.rename(entry, destination)
+    rctx.delete("_newlib")
 
     rctx.file("BUILD.bazel", _BUILD_FILE)
 
 gcc_combined_src_repo = repository_rule(
     implementation = _impl,
-    attrs = {
-        "busybox_arm64": attr.label(allow_single_file = True, mandatory = True),
-        "busybox_x64": attr.label(allow_single_file = True, mandatory = True),
-    },
     doc = "GCC 15.2.0 combined source tree with in-tree newlib and prerequisites.",
 )

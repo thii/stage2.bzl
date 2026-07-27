@@ -41,12 +41,14 @@ stage2_compiler_seed(
 - `env` maps environment names to values containing root tokens. `CC` and
   `CXX` are required; variables such as `AR`, `RANLIB`, `NM`, and `LD` may be
   added for non-GCC bundles.
-- `path` adds tokenized directories ahead of the BusyBox fallback on the
-  bootstrap `PATH`.
+- `path` adds tokenized directories ahead of the bootstrap utility suite on
+  `PATH`.
 - `symlinks` recreates links that cannot be declared as Bazel inputs. Keys are
   tokenized paths inside those scratch copies and values are literal link
   targets. The default musl.cc seed uses `{"%{SEED}/usr": "."}` for its cyclic
-  `usr -> .` link.
+  `usr -> .` link. When a shell seed supplies no utility suite, `CC` must first
+  compile and link the no-header freestanding materializer from the original
+  seed root; that helper then copies the root and creates these links.
 
 The target is public by default so the extension-generated selection
 repository can reference it.
@@ -89,6 +91,8 @@ stage2_shell_seed(
     executable = executable,
     args = [],
     inputs = [],
+    tools_executable = None,
+    tools_args = [],
 )
 ```
 
@@ -97,7 +101,12 @@ stage2_shell_seed(
   executable such as BusyBox and `[]` for Bash. Nested build scripts invoke the
   executable through a symlink named `sh` without these arguments, so it must
   dispatch as a shell from that basename.
-- `inputs` declares any additional files needed to run the shell.
+- `inputs` declares any additional files needed to run the seed.
+- `tools_executable` optionally supplies a self-contained static multicall
+  utility suite. It must accept an applet name as its first argument and
+  dispatch through applet-named symlinks.
+- `tools_args` are passed to `tools_executable` to list its applets as
+  whitespace-separated names; BusyBox uses `["--list"]`.
 
 Select it from the root `MODULE.bazel`:
 
@@ -112,9 +121,12 @@ shell_seeds.seed(
 )
 ```
 
-Only root tags are honored. An unspecified architecture retains Alpine BusyBox.
-BusyBox remains on `PATH` as the external utility fallback. The selected shell
-may also provide builtins or multicall applets that take precedence.
+Only root tags are honored. An unspecified architecture retains Alpine
+BusyBox, which supplies both the shell and utility suite. If a selected seed
+omits `tools_executable`, as static Bash does, pinned Toybox utilities are built
+from source using only the selected compiler and shell seeds; BusyBox is
+absent. This path requires Bash semantics, so a different shell must supply a
+utility suite.
 
 ## Build macros
 

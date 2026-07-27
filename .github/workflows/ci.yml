@@ -80,7 +80,7 @@ jobs:
           bazelisk-cache: true
 
       # Leave time to save completed actions when a cold run needs another try.
-      - name: Build three bootstrap seed lineages and compare their outputs
+      - name: Build seed lineages, smoke-test Zig+Bash, and compare outputs
         id: build
         timeout-minutes: 315
         working-directory: e2e/consumer
