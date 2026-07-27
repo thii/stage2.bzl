@@ -1,13 +1,30 @@
 # stage2.bzl
 
-stage2.bzl is primarily for bootstrapping compilers and build tools from source
-in an empty Linux sandbox. It provides a source-built compiler, shell,
-userland, and common build tools; it can also drive conventional package
-builds.
+stage2.bzl is a Bazel ruleset for bootstrapping software from source in an
+empty Linux sandbox. It provides a source-built compiler, shell, userland, and
+common build tools.
 
-From stage 2 onward, library-owned actions use no prebuilt executable as build
+From stage 2 onward, library-owned actions use no prebuilt executables as build
 machinery. Below that boundary, configurable compiler and shell seeds bootstrap
-the source-built tools. The defaults are musl.cc GCC and Alpine BusyBox.
+the source-built tools. The default seeds are musl.cc GCC and Alpine BusyBox.
+
+The CI-verified SHA-256 digests of the closing compiler and userland archives
+for this revision are below. Please file a bug if a verified seed combination
+produces different digests at the same revision.
+
+**x86_64**
+
+```text
+2c7c4b97fce87400ff1123fbb9c40f038d4b0e3810eebf9f4290917908438fdc  cc.tar.gz
+e672e708cf7b2f39ea6e7623e690ea3236bfaf1a46597e3fce8f94c3343417a9  userland.tar.gz
+```
+
+**aarch64**
+
+```text
+97aed4efb440bc37d1e9e98320aba5eca02078222a53eb858c9402fd2275ce41  cc.tar.gz
+721184e67a15b32fee4e34eb70960564e5b7ffc258d8222776c2c87ac2d077b6  userland.tar.gz
+```
 
 ## Requirements and setup
 
@@ -250,11 +267,9 @@ byte-identical on `x86_64` and `aarch64`.
 
 ## Caveats
 
-This project is mostly for bootstrapping compilers and build tools. Prefer
-Bazel-native rules for ordinary application builds that need fine-grained
-incrementality and language integration. stage2.bzl wraps each upstream build
-in a coarse shell action, favoring auditable tool provenance, hermetic
-correctness, and compatibility with conventional source builds:
+stage2.bzl wraps each upstream build in a coarse shell action. This favors
+auditable tool provenance, hermetic correctness, and compatibility with
+conventional source builds, but gives up much of Bazel's native integration:
 
 - Changing any input reruns the whole action. Bazel cannot cache or schedule
   individual compilations; `make` or the script controls internal parallelism.
