@@ -48,16 +48,11 @@ build:linux --sandbox_default_allow_network=false
 ```
 
 These settings select the empty sandbox, reject weaker spawn strategies, and
-disable action network access. Do not mount anything into the sandbox. A
-valid root starts without `/usr`, `/lib`, or `/bin/sh`; the preamble rejects
-an existing `/bin/sh`, then creates an ephemeral link to its declared shell.
-Remote execution is not supported.
+disable action network access. Do not mount anything into the sandbox.
 
 ## Quickstart
 
-The intended workload is a compiler or build tool; GNU Hello is a compact
-example of the same `configure`, `make`, and `make install` flow. Add its
-pinned source archive to `MODULE.bazel`:
+A compact example of the same `configure`, `make`, and `make install` flow.
 
 ```starlark
 http_archive = use_repo_rule(
@@ -133,18 +128,11 @@ The script may run any build commands supplied by the userland or
 `@stage2.bzl//trees:cc` to `path_trees` when the script needs the default
 compiler; use `out_tree = True` for a directory output.
 
-## Rules and trees
-
-Load supported symbols from `@stage2.bzl`. Other macros merge trees, create
-distribution archives, and build GCC/newlib cross toolchains. Reusable
-filesystem trees are public under `@stage2.bzl//trees`.
-
 ## Compiler seeds
 
 The default compiler seed is musl.cc GCC 11.2.1. The root module may select a
 different complete, static C/C++ compiler seed for either supported
-architecture. Fetch the bundle with `http_archive`, then describe its files and
-commands in a BUILD file:
+architecture:
 
 ```starlark
 load("@stage2.bzl", "stage2_compiler_seed")
@@ -181,15 +169,6 @@ An unspecified architecture keeps the default seed. The selected bundle must
 be self-contained: its commands cannot rely on host executables or libraries,
 and they must compile and link static C and C++ programs. A seed may combine
 several input trees and named roots.
-
-For example, the
-[Hermetic LLVM minimal release](https://github.com/hermeticbuild/hermetic-llvm/releases/tag/llvm-23.1.0-rc1-1)
-provides static Clang and LLD executables, but no libc, CRT objects, compiler
-runtime, or C++ runtime. “Static” describes the LLVM executables themselves,
-not a complete target environment. The archive cannot serve as a seed by
-itself; combine it with a complete static sysroot/runtime and describe both
-roots. Exact Clang target, sysroot, linker, and runtime flags depend on that
-companion bundle.
 
 ## Shell seeds
 
@@ -248,10 +227,6 @@ Pass it as `userland = ":minimal-userland"`. The sandbox preamble requires
 `bin/bash`, `bin/mkdir`, and `bin/ln`; each rule or script may require more.
 Use `path_trees` for optional tools such as `@stage2.bzl//trees:clang`, or
 merge trees when one combined userland is useful.
-
-Public components preserve the library's provenance claim. A custom tree does
-so only when its complete executable provenance is audited; a Bazel label alone
-is not proof.
 
 ## Trust boundary
 
