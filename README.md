@@ -149,7 +149,6 @@ stage2_compiler_seed(
         "CC": "%{SEED}/bin/gcc -static",
         "CXX": "%{SEED}/bin/g++ -static",
     },
-    symlinks = {"%{SEED}/usr": "."},
 )
 ```
 
@@ -168,8 +167,10 @@ compiler_seeds.seed(
 
 An unspecified architecture keeps the default seed. The selected bundle must
 be self-contained: its commands cannot rely on host executables or libraries,
-and they must compile and link static C and C++ programs. A seed may combine
-several input trees and named roots.
+and they must compile and link static C and C++ programs. If the selected shell
+does not supply utilities, the compiler must work directly from its declared,
+read-only layout; normalize cyclic archive links in the repository rule. A seed
+may combine several input trees and named roots.
 
 ## Shell seeds
 
@@ -206,8 +207,8 @@ because nested build scripts use `/bin/sh`. A seed may optionally provide a
 multicall `tools_executable` and the `tools_args` that make it list its applets.
 If omitted, as for static Bash, pinned Toybox utilities are built from source
 using only the selected compiler and shell seeds; BusyBox is absent. This
-source-bootstrap path requires Bash semantics and a compiler that can build a
-freestanding helper before its synthetic seed links are restored.
+source-bootstrap path requires Bash semantics and a compiler that can directly
+compile and link a hosted static C program from its declared, read-only inputs.
 
 ## Userlands
 

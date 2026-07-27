@@ -66,7 +66,6 @@ stage2_compiler_seed(
             "bin/gcc",
         ),
     },
-    symlinks = {"%{SEED}/usr": "."},
     visibility = ["//visibility:public"],
 )
 
@@ -84,7 +83,6 @@ stage2_compiler_seed(
             "bin/gcc",
         ),
     },
-    symlinks = {"%{SEED}/usr": "."},
     visibility = ["//visibility:public"],
 )
 

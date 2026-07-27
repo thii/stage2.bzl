@@ -35,20 +35,21 @@ stage2_compiler_seed(
   file needed to compile and statically link hosted C and C++ programs.
 - `roots` maps an uppercase token to an anchor label and that file's path
   relative to the intended root. Each anchor must provide exactly one file.
-  Each token expands through a stable scratch-local copy, keeping repository
-  names out of compiler commands. Use `"."` as the relative path when the
-  anchor itself is a directory artifact.
+  Normal bootstrap actions expand each token through a stable scratch-local
+  copy, keeping repository names out of compiler commands. The initial
+  source-bootstrap compile uses the declared root directly. Use `"."` as the
+  relative path when the anchor itself is a directory artifact.
 - `env` maps environment names to values containing root tokens. `CC` and
   `CXX` are required; variables such as `AR`, `RANLIB`, `NM`, and `LD` may be
   added for non-GCC bundles.
 - `path` adds tokenized directories ahead of the bootstrap utility suite on
   `PATH`.
 - `symlinks` recreates links that cannot be declared as Bazel inputs. Keys are
-  tokenized paths inside those scratch copies and values are literal link
-  targets. The default musl.cc seed uses `{"%{SEED}/usr": "."}` for its cyclic
-  `usr -> .` link. When a shell seed supplies no utility suite, `CC` must first
-  compile and link the no-header freestanding materializer from the original
-  seed root; that helper then copies the root and creates these links.
+  tokenized paths inside scratch copies and values are literal link targets.
+  They are restored only after bootstrap utilities are available. When a shell
+  seed supplies no utility suite, `CC` must first compile and link a hosted
+  hosted static C program directly from the seed's declared, read-only layout.
+  Normalize any links needed for that first compile in the repository rule.
 
 The target is public by default so the extension-generated selection
 repository can reference it.
@@ -125,8 +126,10 @@ Only root tags are honored. An unspecified architecture retains Alpine
 BusyBox, which supplies both the shell and utility suite. If a selected seed
 omits `tools_executable`, as static Bash does, pinned Toybox utilities are built
 from source using only the selected compiler and shell seeds; BusyBox is
-absent. This path requires Bash semantics, so a different shell must supply a
-utility suite.
+absent. This path requires Bash semantics and a compiler that can directly
+compile and link a hosted static C program from its declared, read-only layout.
+Normalize any required cyclic links in the compiler repository first. A
+different shell must supply a utility suite.
 
 ## Build macros
 

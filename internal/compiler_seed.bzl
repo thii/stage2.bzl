@@ -173,7 +173,9 @@ def stage2_compiler_seed(
       env: Environment variable -> command/value. CC and CXX are required.
         Root tokens use the `%{TOKEN}` spelling.
       path: PATH entries with root tokens.
-      symlinks: Ephemeral link path -> literal target, with root tokens.
+      symlinks: Ephemeral link path -> literal target, with root tokens. Links
+        are restored after bootstrap utilities exist, so they cannot repair the
+        first compiler invocation when the shell seed supplies no utilities.
       visibility: Target visibility; public by default because the generated
         seed-selection repository must reference it.
       **kwargs: Common target attributes such as tags and testonly.

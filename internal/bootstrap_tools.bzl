@@ -25,11 +25,6 @@ def _assignment_value(template, roots):
     }
     return _expand(escaped, shell_roots)
 
-def _manifest_field(value):
-    if "\n" in value or "\r" in value or "\t" in value:
-        fail("bootstrap materializer paths and link targets cannot contain tabs or newlines: {!r}".format(value))
-    return value
-
 def _root_from_main(main):
     suffix = "/main.c"
     if not main.path.endswith(suffix):
@@ -41,6 +36,20 @@ def _path_value(entries, roots):
         _assignment_value(entry, roots)
         for entry in entries
     ])
+
+def _seed_exports(seed, roots, cache_root):
+    exports = []
+    for name in sorted(seed.env):
+        if name in ["CC", "CXX"]:
+            continue
+        if name == "ZIG_GLOBAL_CACHE_DIR":
+            value = cache_root + "/zig-global-cache"
+        elif name == "ZIG_LOCAL_CACHE_DIR":
+            value = cache_root + "/zig-local-cache"
+        else:
+            value = _assignment_value(seed.env[name], roots)
+        exports.append("export {}=\"{}\"".format(name, value))
+    return exports
 
 def _source_bootstrap_tools_impl(ctx):
     shell = ctx.attr.shell_seed[ShellSeedInfo]
@@ -64,170 +73,125 @@ def _source_bootstrap_tools_impl(ctx):
     # declared executable named `toybox` even though the producing target has
     # a more descriptive name.
     output = ctx.actions.declare_file(ctx.label.name + "/toybox")
-    materializer = ctx.actions.declare_file(ctx.label.name + ".materialize")
-    manifest = ctx.actions.declare_file(ctx.label.name + ".manifest")
     scratch = output.path + ".scratch"
+    roots = dict(seed.roots)
 
-    original_roots = dict(seed.roots)
-    copied_roots = {
-        token: scratch + "/compiler-seed/" + token
-        for token in seed.roots
-    }
-
-    manifest_lines = []
-    for token in sorted(seed.roots):
-        manifest_lines.append("copy\t{}\t{}".format(
-            _manifest_field(seed.roots[token]),
-            _manifest_field(copied_roots[token]),
-        ))
-    manifest_lines.append("copy\t{}\t{}".format(
-        _manifest_field(_root_from_main(ctx.file.toybox_main)),
-        _manifest_field(scratch + "/toybox"),
-    ))
-    for link in sorted(seed.symlinks):
-        manifest_lines.append("symlink\t{}\t{}".format(
-            _manifest_field(seed.symlinks[link]),
-            _manifest_field(_expand(link, copied_roots)),
-        ))
-    ctx.actions.write(manifest, "\n".join(manifest_lines) + "\n")
-
-    direct_exports = []
-    for name in sorted(seed.env):
-        if name in ["CC", "CXX"]:
-            continue
-
-        # Zig creates these directories itself. They cannot live below the
-        # read-only original seed root during the first compiler invocation.
-        if name == "ZIG_GLOBAL_CACHE_DIR":
-            value = "$ROOT/{}.zig-global-cache".format(materializer.basename)
-        elif name == "ZIG_LOCAL_CACHE_DIR":
-            value = "$ROOT/{}.zig-local-cache".format(materializer.basename)
-        else:
-            value = _assignment_value(seed.env[name], original_roots)
-        direct_exports.append("export {}=\"{}\"".format(name, value))
-
-    copied_exports = []
-    for name in sorted(seed.env):
-        if name in ["CC", "CXX"]:
-            continue
-        if name == "ZIG_GLOBAL_CACHE_DIR":
-            value = "$SCRATCH/zig-global-cache"
-        elif name == "ZIG_LOCAL_CACHE_DIR":
-            value = "$SCRATCH/zig-local-cache"
-        else:
-            value = _assignment_value(seed.env[name], copied_roots)
-        copied_exports.append("export {}=\"{}\"".format(name, value))
-
-    direct_path = _path_value(seed.path, original_roots)
-    copied_path = _path_value(seed.path, copied_roots)
-    direct_cc = _assignment_value(seed.env["CC"], original_roots)
-    copied_cc = _assignment_value(seed.env["CC"], copied_roots)
+    direct_exports = _seed_exports(seed, roots, "$ROOT/" + output.path + ".direct")
+    build_exports = _seed_exports(seed, roots, "$SCRATCH")
+    seed_path = _path_value(seed.path, roots)
+    seed_cc = _assignment_value(seed.env["CC"], roots)
+    tools_path = "$SCRATCH/prereq-bin"
+    if seed_path:
+        tools_path += ":" + seed_path
 
     script = """set -eu
 umask 022
 ROOT="$PWD"
 export HOME="$ROOT" TMPDIR="$ROOT"
-export PATH="{direct_path}"
+export PATH="{seed_path}"
 {direct_exports}
 export LC_ALL=C LANG=C TZ=UTC SOURCE_DATE_EPOCH=0 ZERO_AR_DATE=1
-MATERIALIZER="$ROOT/{materializer}"
-MANIFEST="$ROOT/{manifest}"
-DIRECT_CC="{direct_cc}"
+DIRECT_CC="{seed_cc}"
+OUTPUT="$ROOT/{output}"
+TOYBOX_INPUT="$ROOT/{toybox_source}"
 if [ -e /bin/sh ] || [ -L /bin/sh ] || \
    [ -e /bin/bash ] || [ -L /bin/bash ]; then
     echo "source bootstrap tools require Bazel's empty hermetic Linux sandbox" >&2
     exit 1
 fi
 
-$DIRECT_CC \
-    -Os -ffreestanding -fno-builtin -fno-stack-protector \
-    -fno-pie -fno-pic -fno-unwind-tables -fno-asynchronous-unwind-tables \
-    -nostdlib -nostartfiles -nodefaultlibs -no-pie \
-    -Wl,-e,_start -Wl,--build-id=none \
-    "$ROOT/{materializer_source}" -o "$MATERIALIZER"
+# Use Toybox's checked-in prerequisite build verbatim. Its output name is
+# relative to the read-only source directory, so the temporary cc function
+# redirects only that final argument to the declared output.
+cc() {{
+    local args=("$@")
+    local last=$((${{#args[@]}} - 1))
+    if [ "${{args[$last]}}" != toybox-prereq ]; then
+        echo "unexpected Toybox prerequisite compiler invocation" >&2
+        exit 1
+    fi
+    args[$last]="$OUTPUT"
+    $DIRECT_CC "${{args[@]}}"
+}}
+cd "$TOYBOX_INPUT"
+. scripts/prereq/build.sh
+unset -f cc
 
-"$MATERIALIZER" apply "$MANIFEST"
 SCRATCH="$ROOT/{scratch}"
-"$MATERIALIZER" mkdir "$SCRATCH/early-bin"
-"$MATERIALIZER" mkdir "$SCRATCH/prereq-bin"
-"$MATERIALIZER" mkdir "$SCRATCH/tmp"
-"$MATERIALIZER" mkdir /bin
-"$MATERIALIZER" symlink "$ROOT/{shell}" /bin/sh
-"$MATERIALIZER" symlink "$ROOT/{shell}" /bin/bash
+"$OUTPUT" mkdir -p "$SCRATCH/prereq-bin" "$SCRATCH/tmp" "$SCRATCH/toybox"
+"$OUTPUT" mkdir -p /bin
+"$OUTPUT" ln -s "$ROOT/{shell}" /bin/sh
+"$OUTPUT" ln -s "$ROOT/{shell}" /bin/bash
 
-export HOME="$SCRATCH" TMPDIR="$SCRATCH/tmp"
-export PATH="{copied_path}"
-{copied_exports}
-export LC_ALL=C LANG=C TZ=UTC SOURCE_DATE_EPOCH=0 ZERO_AR_DATE=1
-export CC_FOR_BUILD="{copied_cc}"
-
-# Toybox's build scripts require a one-word compiler command. The public
-# compiler-seed contract intentionally permits commands such as `zig cc ...`,
-# so expose that command through a temporary sh wrapper.
-printf '%s\\n' '#!/bin/sh' 'exec $CC_FOR_BUILD "$@"' > "$SCRATCH/early-bin/cc"
-"$MATERIALIZER" chmod 0755 "$SCRATCH/early-bin/cc"
-export PATH="$SCRATCH/early-bin:$PATH"
-
-TOYBOX_SOURCE="$SCRATCH/toybox"
-cd "$TOYBOX_SOURCE"
-/bin/sh scripts/prereq/build.sh
-PREREQ="$TOYBOX_SOURCE/toybox-prereq"
-
-# The checked-in prerequisite configuration intentionally has cat rather than
-# cp. Use it to copy itself, then install its applet links.
-"$PREREQ" cat "$PREREQ" > "$SCRATCH/prereq-bin/toybox"
-"$PREREQ" chmod 0755 "$SCRATCH/prereq-bin/toybox"
+# Preserve the prerequisite multiplexer before the final build replaces
+# OUTPUT, then install its applet links.
+"$OUTPUT" cat "$OUTPUT" > "$SCRATCH/prereq-bin/toybox"
+"$OUTPUT" chmod 0755 "$SCRATCH/prereq-bin/toybox"
 PREREQ="$SCRATCH/prereq-bin/toybox"
 for applet in $("$PREREQ"); do
     "$PREREQ" ln -sf toybox "$SCRATCH/prereq-bin/$applet"
 done
 "$PREREQ" ln -sf "$ROOT/{shell}" "$SCRATCH/prereq-bin/bash"
 
-# scripts/make.sh copies the unstripped executable into OUTNAME. The checked-in
-# prerequisite suite has no cp applet, so provide that one narrow operation
-# through the already source-built materializer.
-export STAGE2_MATERIALIZER="$MATERIALIZER"
-printf '%s\\n' '#!/bin/sh' 'exec "$STAGE2_MATERIALIZER" copy "$1" "$2"' > "$SCRATCH/early-bin/cp"
-"$MATERIALIZER" chmod 0755 "$SCRATCH/early-bin/cp"
-export PATH="$SCRATCH/early-bin:$SCRATCH/prereq-bin:{copied_path}"
+# Keep source inputs read-only. A shallow symlink view makes only Toybox's
+# generated files and working state writable.
+for entry in Config.in configure main.c toys.h lib scripts toys; do
+    "$PREREQ" ln -s "$TOYBOX_INPUT/$entry" "$SCRATCH/toybox/$entry"
+done
+
+export HOME="$SCRATCH" TMPDIR="$SCRATCH/tmp"
+export PATH="{tools_path}"
+{build_exports}
+export LC_ALL=C LANG=C TZ=UTC SOURCE_DATE_EPOCH=0 ZERO_AR_DATE=1
+export CC_FOR_BUILD="{seed_cc}"
+
+# Toybox's build scripts require a one-word compiler command. The public
+# compiler-seed contract intentionally permits commands such as `zig cc ...`,
+# so expose that command through a temporary sh wrapper.
+printf '%s\\n' '#!/bin/sh' 'exec $CC_FOR_BUILD "$@"' > "$SCRATCH/prereq-bin/cc"
+"$PREREQ" chmod 0755 "$SCRATCH/prereq-bin/cc"
+
+# scripts/make.sh copies the unstripped executable into OUTNAME, but the
+# prerequisite configuration has cat rather than cp. This wrapper supplies
+# the one two-file copy operation the script needs.
+printf '%s\\n' '#!/bin/sh' 'cat "$1" > "$2"' > "$SCRATCH/prereq-bin/cp"
+"$PREREQ" chmod 0755 "$SCRATCH/prereq-bin/cp"
 
 # Build the normal command set plus the pending POSIX tools needed by GNU
 # configure scripts. This is deliberately a source build; only the selected
 # shell and compiler seeds execute before it.
-printf '%s\\n' \\
-    'CONFIG_AWK=y' \\
-    'CONFIG_DIFF=y' \\
-    'CONFIG_EXPR=y' \\
+printf '%s\\n' \
+    'CONFIG_AWK=y' \
+    'CONFIG_DIFF=y' \
+    'CONFIG_EXPR=y' \
     'CONFIG_TR=y' > "$SCRATCH/bootstrap.config"
 export KCONFIG_ALLCONFIG="$SCRATCH/bootstrap.config"
-export KCONFIG_CONFIG="$TOYBOX_SOURCE/.config"
-export GENDIR="$TOYBOX_SOURCE/generated"
+export KCONFIG_CONFIG="$SCRATCH/toybox/.config"
+export GENDIR="$SCRATCH/toybox/generated"
 export UNSTRIPPED="$SCRATCH/unstripped"
-export OUTNAME="$ROOT/{output}"
+export OUTNAME="$OUTPUT"
 export VERSION=0.8.14 NOSTRIP=1 CPUS={jobs}
 export CC=cc HOSTCC=cc CFLAGS='-O2 -funsigned-char' LDFLAGS=-static
+cd "$SCRATCH/toybox"
 /bin/bash scripts/genconfig.sh -d
 /bin/bash scripts/make.sh
 """.format(
-        copied_exports = "\n".join(copied_exports),
-        copied_path = copied_path,
-        copied_cc = copied_cc,
-        direct_cc = direct_cc,
+        build_exports = "\n".join(build_exports),
         direct_exports = "\n".join(direct_exports),
-        direct_path = direct_path,
         jobs = ctx.attr.jobs,
-        manifest = manifest.path,
-        materializer = materializer.path,
-        materializer_source = ctx.file._materializer_source.path,
         output = output.path,
         scratch = scratch,
+        seed_cc = seed_cc,
+        seed_path = seed_path,
         shell = shell.executable.path,
+        tools_path = tools_path,
+        toybox_source = _root_from_main(ctx.file.toybox_main),
     )
 
     inputs = depset(
         direct = (
             ctx.files.toybox_srcs +
-            [ctx.file.toybox_main, ctx.file._materializer_source, manifest] +
+            [ctx.file.toybox_main] +
             seed.files.to_list() +
             shell.files.to_list()
         ),
@@ -236,7 +200,7 @@ export CC=cc HOSTCC=cc CFLAGS='-O2 -funsigned-char' LDFLAGS=-static
         executable = shell.executable,
         arguments = shell.args + ["-c", script],
         inputs = inputs,
-        outputs = [output, materializer],
+        outputs = [output],
         mnemonic = "SourceBootstrapTools",
         progress_message = "Building bootstrap utilities from source %{label}",
     )
@@ -266,10 +230,6 @@ source_bootstrap_tools = rule(
         "toybox_srcs": attr.label(
             allow_files = True,
             mandatory = True,
-        ),
-        "_materializer_source": attr.label(
-            allow_single_file = True,
-            default = Label("//internal:bootstrap/materialize.c"),
         ),
     },
     executable = True,
