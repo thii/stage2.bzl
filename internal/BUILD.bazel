@@ -104,6 +104,7 @@ source_bootstrap_tools(
     tags = ["manual"],
     toybox_main = "@toybox_src//:main.c",
     toybox_srcs = "@toybox_src//:srcs",
+    visibility = ["//visibility:public"],
 )
 
 # The self-hosted host toolchain targets <arch>-unknown-linux-musl (same
