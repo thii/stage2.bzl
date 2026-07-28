@@ -341,7 +341,7 @@ def _make_bootstrap_impl(ctx):
         inputs = depset(ctx.files.srcs + ctx.files.path_trees + _common_inputs(ctx)),
         outputs = [out],
         mnemonic = "BootstrapGnuMake",
-        progress_message = "Bootstrapping GNU make (hermetic sandbox) %{label}",
+        progress_message = "Bootstrapping GNU make %{label}",
     )
     return [DefaultInfo(files = depset([out]))]
 
@@ -415,7 +415,7 @@ def _autotools_build_impl(ctx):
         ),
         outputs = [out],
         mnemonic = "AutotoolsBuild",
-        progress_message = "configure && make && make install (hermetic sandbox) %{label}",
+        progress_message = "configure && make && make install %{label}",
     )
     return [DefaultInfo(files = depset([out]))]
 

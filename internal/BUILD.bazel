@@ -339,7 +339,10 @@ _USERLAND_PACKAGES = [
         configure = "@" + name + "_src//:configure",
         configure_args = _USERLAND_ARGS + extra + _STAGE_CC_ONLY,
         make = ":make",
-        path_trees = [":host-gcc-s1"],
+        # findutils' updatedb recipe relies on GNU sed's `q` terminating
+        # before it opens later sentinel operands. Toybox sed does not, so use
+        # the GNU sed that this same source-userland tier already built.
+        path_trees = [":host-gcc-s1"] + ([":sed-s2"] if name == "findutils" else []),
         tool_subdir = _TOOL_SUBDIR,
     )
     for name, extra in _USERLAND_PACKAGES
