@@ -672,7 +672,7 @@ find "$sdk" -type l | while IFS= read -r l; do
         "$t"/*) rm -f "$l" ;;
     esac
 done
-cp -a "$sdk"/. %{OUT}/
+cp -a --remove-destination "$sdk"/. %{OUT}/
 """,
 )
 

@@ -61,6 +61,12 @@ ROOT="$PWD"
 SCRATCH="$ROOT/%{scratch}"
 """
 
+# Overlay copies must unlink an existing destination first. In Bazel's
+# hermetic Linux sandbox, following a destination symlink can write through a
+# hardlinked input and corrupt it. This long option is shared by GNU coreutils,
+# BusyBox, and Toybox.
+_COPY_TREE_FLAGS = "-a --remove-destination"
+
 # Bootstrap mode a: selected multicall utility symlink farm on PATH. The
 # preamble supplies its `sh` link explicitly from the selected shell.
 _TOOLS_BOOTSTRAP = """TOOLS="$ROOT/%{tools}"
@@ -244,8 +250,9 @@ def _preamble(ctx, scratch, extra_path_dirs):
         text += 'mkdir -p "$SCRATCH/compiler-seed"\n'
         for token in sorted(seed.roots):
             text += """"$TOOLS" mkdir -p "$SCRATCH/compiler-seed"/{token}
-"$TOOLS" cp -a "$ROOT"/{root}/. "$SCRATCH/compiler-seed"/{token}/
+"$TOOLS" cp {copy_flags} "$ROOT"/{root}/. "$SCRATCH/compiler-seed"/{token}/
 """.format(
+                copy_flags = _COPY_TREE_FLAGS,
                 root = _shell_single_quote(seed.roots[token]),
                 token = _shell_single_quote(token),
             )
@@ -376,7 +383,11 @@ def _autotools_build_impl(ctx):
     # before gcc) so the result is one merged prefix, exactly as if both
     # had been installed into it in sequence.
     for base in ctx.files.install_base:
-        script += 'cp -a "$ROOT/{}/." "$ROOT/{}/"\n'.format(base.path, out.path)
+        script += 'cp {} "$ROOT/{}/." "$ROOT/{}/"\n'.format(
+            _COPY_TREE_FLAGS,
+            base.path,
+            out.path,
+        )
 
     quoted_args = " ".join([
         "'" + _expand_out(a, out) if "%{OUT}" in a else "'" + a + "'"
@@ -461,7 +472,11 @@ def _tree_merge_impl(ctx):
     out = ctx.actions.declare_directory(ctx.label.name)
     script = _preamble(ctx, out.path + ".scratch", [])
     for tree in ctx.files.trees:
-        script += 'cp -a "$ROOT/{}/." "$ROOT/{}/"\n'.format(tree.path, out.path)
+        script += 'cp {} "$ROOT/{}/." "$ROOT/{}/"\n'.format(
+            _COPY_TREE_FLAGS,
+            tree.path,
+            out.path,
+        )
     _run_shell(
         ctx,
         script,
@@ -558,7 +573,10 @@ def _dist_tarball_impl(ctx):
     # into the sandbox and must not be modified in place) and archive with
     # a stable entry order, so the tarball is reproducible.
     script += 'mkdir -p "$SCRATCH/build/tree"\n'
-    script += 'cp -a "$ROOT/{}/." "$SCRATCH/build/tree/"\n'.format(tree.path)
+    script += 'cp {} "$ROOT/{}/." "$SCRATCH/build/tree/"\n'.format(
+        _COPY_TREE_FLAGS,
+        tree.path,
+    )
     script += 'find "$SCRATCH/build/tree" -exec touch -h -d @0 (BRACES) +\n'.replace("(BRACES)", "{}")
     script += 'tar --sort=name -C "$SCRATCH/build/tree" -czf "$ROOT/{}" .\n'.format(out.path)
     _run_shell(
