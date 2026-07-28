@@ -365,7 +365,11 @@ exports_files(["main.c"])
 """,
     sha256 = "827e4cdfd69f5da973e00e2a59b30b3c9857fb7fae74c362fd0b4f96be7929b0",
     strip_prefix = "toybox-0.8.14",
-    urls = ["https://landley.net/toybox/downloads/toybox-0.8.14.tar.gz"],
+    urls = [
+        "https://distfiles.gentoo.org/distfiles/fe/toybox-0.8.14.tar.gz",
+        "https://gentoo.osuosl.org/distfiles/fe/toybox-0.8.14.tar.gz",
+        "https://landley.net/toybox/downloads/toybox-0.8.14.tar.gz",
+    ],
 )
 
 # Alpine busybox-static packages (.apk files are tar.gz archives). The default

@@ -20,3 +20,6 @@ build:linux --experimental_use_hermetic_linux_sandbox
 build:linux --spawn_strategy=linux-sandbox
 # Actions get no network either (fresh netns, loopback only).
 build:linux --sandbox_default_allow_network=false
+# Bazel 9's lazy cache materialization mishandles symlinks in intermediate
+# TreeArtifacts. Materialize complete trees before a dependent action starts.
+build:linux --remote_download_outputs=all

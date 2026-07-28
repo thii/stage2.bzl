@@ -46,10 +46,12 @@ common --enable_platform_specific_config
 build:linux --experimental_use_hermetic_linux_sandbox
 build:linux --spawn_strategy=linux-sandbox
 build:linux --sandbox_default_allow_network=false
+build:linux --remote_download_outputs=all
 ```
 
-These settings select the empty sandbox, reject weaker spawn strategies, and
-disable action network access. Do not mount anything into the sandbox.
+These settings select the empty sandbox, reject weaker spawn strategies,
+disable action network access, and fully materialize cached tree inputs before
+execution. Do not mount anything into the sandbox.
 
 ## Quickstart
 

@@ -5,3 +5,4 @@ build --define=shell_seed=busybox
 build:linux --experimental_use_hermetic_linux_sandbox
 build:linux --spawn_strategy=linux-sandbox
 build:linux --sandbox_default_allow_network=false
+build:linux --remote_download_outputs=all
