@@ -352,6 +352,10 @@ _USERLAND_PACKAGES = [
 # autotools flows exec, in one merged prefix.
 tree_merge(
     name = "userland-s2",
+    # Toybox cp cannot safely copy gawk's linked aliases from Bazel's
+    # hardlink-based hermetic sandbox. Coreutils is already one of this
+    # merge's from-source inputs, so prefer its cp while assembling the tree.
+    path_trees = [":coreutils-s2"],
     trees = [
         ":bash-s2",
         ":coreutils-s2",

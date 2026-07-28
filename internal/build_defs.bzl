@@ -480,7 +480,7 @@ def _tree_merge_impl(ctx):
     _run_shell(
         ctx,
         script,
-        inputs = depset(ctx.files.trees + _common_inputs(ctx)),
+        inputs = depset(ctx.files.trees + ctx.files.path_trees + _common_inputs(ctx)),
         outputs = [out],
         mnemonic = "TreeMerge",
         progress_message = "Merging install trees %{label}",
