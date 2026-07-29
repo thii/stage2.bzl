@@ -8,10 +8,24 @@ export TZ=UTC
 : "${STAGE2_ARTIFACTS:?}"
 : "${STAGE2_OUTPUT_BASE:?}"
 
-readonly BAZEL="$(command -v bazel)"
+readonly BAZEL_BIN="$(command -v bazel)"
+readonly BAZEL_REMOTE_CACHE_RC="${REMOTE_CACHE_BAZELRC:-}"
+
+if [[ -n "$BAZEL_REMOTE_CACHE_RC" && ! -f "$BAZEL_REMOTE_CACHE_RC" ]]; then
+  echo "remote-cache Bazel rc does not exist: $BAZEL_REMOTE_CACHE_RC" >&2
+  exit 1
+fi
+
+run_bazel() {
+  local -a startup_options=()
+  if [[ -n "$BAZEL_REMOTE_CACHE_RC" ]]; then
+    startup_options+=(--bazelrc="$BAZEL_REMOTE_CACHE_RC")
+  fi
+  "$BAZEL_BIN" "${startup_options[@]}" "$@"
+}
 
 shutdown_bazel() {
-  "$BAZEL" --output_base="$STAGE2_OUTPUT_BASE" shutdown >/dev/null 2>&1 || true
+  run_bazel --output_base="$STAGE2_OUTPUT_BASE" shutdown >/dev/null 2>&1 || true
 }
 
 trap shutdown_bazel EXIT
@@ -50,7 +64,7 @@ assert_no_busybox_in_bash_lineage() {
 
   local busybox_dependencies
   busybox_dependencies="$(
-    "$BAZEL" --output_base="$STAGE2_OUTPUT_BASE" cquery \
+    run_bazel --output_base="$STAGE2_OUTPUT_BASE" cquery \
       --ui_event_filters=-info,-warning \
       --noshow_progress \
       --define=compiler_seed="$compiler_seed" \
@@ -67,7 +81,7 @@ assert_no_busybox_in_bash_lineage() {
 
   local busybox_actions
   busybox_actions="$(
-    "$BAZEL" --output_base="$STAGE2_OUTPUT_BASE" aquery \
+    run_bazel --output_base="$STAGE2_OUTPUT_BASE" aquery \
       --ui_event_filters=-info,-warning \
       --noshow_progress \
       --define=compiler_seed="$compiler_seed" \
@@ -105,7 +119,7 @@ build_lineage() {
 
   local compiler_seed_input
   compiler_seed_input="$(
-    "$BAZEL" --output_base="$STAGE2_OUTPUT_BASE" cquery \
+    run_bazel --output_base="$STAGE2_OUTPUT_BASE" cquery \
       --ui_event_filters=-info,-warning \
       --noshow_progress \
       --define=compiler_seed="$compiler_seed" \
@@ -126,7 +140,7 @@ build_lineage() {
 
   local shell_seed_input
   shell_seed_input="$(
-    "$BAZEL" --output_base="$STAGE2_OUTPUT_BASE" cquery \
+    run_bazel --output_base="$STAGE2_OUTPUT_BASE" cquery \
       --ui_event_filters=-info,-warning \
       --noshow_progress \
       --define=compiler_seed="$compiler_seed" \
@@ -148,7 +162,7 @@ build_lineage() {
   echo "Building the $lineage bootstrap-seed lineage"
   echo "  compiler: $compiler_seed_input"
   echo "  shell: $shell_seed_input"
-  "$BAZEL" --output_base="$STAGE2_OUTPUT_BASE" build \
+  run_bazel --output_base="$STAGE2_OUTPUT_BASE" build \
     --define=compiler_seed="$compiler_seed" \
     --define=shell_seed="$shell_seed" \
     --disk_cache="$DISK_CACHE_ROOT/$disk_cache" \
@@ -165,7 +179,7 @@ build_lineage() {
 
   local execroot
   execroot="$(
-    "$BAZEL" --output_base="$STAGE2_OUTPUT_BASE" info \
+    run_bazel --output_base="$STAGE2_OUTPUT_BASE" info \
       --define=compiler_seed="$compiler_seed" \
       --define=shell_seed="$shell_seed" \
       execution_root
@@ -175,7 +189,7 @@ build_lineage() {
     local relative
     local source
     relative="$(
-      "$BAZEL" --output_base="$STAGE2_OUTPUT_BASE" cquery \
+      run_bazel --output_base="$STAGE2_OUTPUT_BASE" cquery \
         --ui_event_filters=-info,-warning \
         --noshow_progress \
         --define=compiler_seed="$compiler_seed" \
@@ -199,7 +213,7 @@ TREES
 
   local hello_output
   hello_output="$(
-    "$BAZEL" --output_base="$STAGE2_OUTPUT_BASE" cquery \
+    run_bazel --output_base="$STAGE2_OUTPUT_BASE" cquery \
       --ui_event_filters=-info,-warning \
       --noshow_progress \
       --define=compiler_seed="$compiler_seed" \
@@ -213,15 +227,17 @@ TREES
 
 # Keep the absolute execroot identical so build paths cannot distinguish the
 # lineages. Expunging between them prevents Bazel's local action cache from
-# crossing the boundary; the persistent disk caches are also split by lineage.
+# crossing the boundary; the persistent local disk caches are also split by
+# lineage. CI's optional remote cache is shared and only reuses an action when
+# its complete Bazel action key matches.
 build_lineage muslcc-busybox muslcc busybox muslcc
-"$BAZEL" --output_base="$STAGE2_OUTPUT_BASE" clean --expunge
+run_bazel --output_base="$STAGE2_OUTPUT_BASE" clean --expunge
 build_lineage zig-busybox zig busybox zig
-"$BAZEL" --output_base="$STAGE2_OUTPUT_BASE" clean --expunge
+run_bazel --output_base="$STAGE2_OUTPUT_BASE" clean --expunge
 build_lineage muslcc-bash muslcc bash bash
 
 echo "Building the Zig+Bash bootstrap smoke target"
-"$BAZEL" --output_base="$STAGE2_OUTPUT_BASE" build \
+run_bazel --output_base="$STAGE2_OUTPUT_BASE" build \
   --define=compiler_seed=zig \
   --define=shell_seed=bash \
   --disk_cache="$DISK_CACHE_ROOT/zig" \
