@@ -48,7 +48,7 @@ stage2_compiler_seed(
   tokenized paths inside scratch copies and values are literal link targets.
   They are restored only after bootstrap utilities are available. When a shell
   seed supplies no utility suite, `CC` must first compile and link a hosted
-  hosted static C program directly from the seed's declared, read-only layout.
+  static C program directly from the seed's declared, read-only layout.
   Normalize any links needed for that first compile in the repository rule.
 
 The target is public by default so the extension-generated selection
