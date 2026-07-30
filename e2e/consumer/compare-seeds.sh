@@ -3,7 +3,6 @@ set -euo pipefail
 export LC_ALL=C
 export TZ=UTC
 
-: "${DISK_CACHE_ROOT:?}"
 : "${REPOSITORY_CACHE:?}"
 : "${STAGE2_ARTIFACTS:?}"
 : "${STAGE2_OUTPUT_BASE:?}"
@@ -32,11 +31,7 @@ trap shutdown_bazel EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-mkdir -p \
-  "$DISK_CACHE_ROOT/muslcc" \
-  "$DISK_CACHE_ROOT/zig" \
-  "$DISK_CACHE_ROOT/bash" \
-  "$STAGE2_ARTIFACTS"
+mkdir -p "$STAGE2_ARTIFACTS"
 
 canonicalize_tree() {
   local source="$1"
@@ -102,10 +97,8 @@ build_lineage() {
   local lineage="$1"
   local compiler_seed="$2"
   local shell_seed="$3"
-  local disk_cache="$4"
   local artifact_dir="$STAGE2_ARTIFACTS/$lineage"
   mkdir -p "$artifact_dir"
-  mkdir -p "$DISK_CACHE_ROOT/$disk_cache"
 
   local host_arch
   case "$(/usr/bin/uname -m)" in
@@ -165,7 +158,6 @@ build_lineage() {
   run_bazel --output_base="$STAGE2_OUTPUT_BASE" build \
     --define=compiler_seed="$compiler_seed" \
     --define=shell_seed="$shell_seed" \
-    --disk_cache="$DISK_CACHE_ROOT/$disk_cache" \
     --jobs=1 \
     --repository_cache="$REPOSITORY_CACHE" \
     //:hello \
@@ -227,20 +219,18 @@ TREES
 
 # Keep the absolute execroot identical so build paths cannot distinguish the
 # lineages. Expunging between them prevents Bazel's local action cache from
-# crossing the boundary; the persistent local disk caches are also split by
-# lineage. CI's optional remote cache is shared and only reuses an action when
-# its complete Bazel action key matches.
-build_lineage muslcc-busybox muslcc busybox muslcc
+# crossing the boundary. CI's optional remote cache is shared and only reuses
+# an action when its complete Bazel action key matches.
+build_lineage muslcc-busybox muslcc busybox
 run_bazel --output_base="$STAGE2_OUTPUT_BASE" clean --expunge
-build_lineage zig-busybox zig busybox zig
+build_lineage zig-busybox zig busybox
 run_bazel --output_base="$STAGE2_OUTPUT_BASE" clean --expunge
-build_lineage muslcc-bash muslcc bash bash
+build_lineage muslcc-bash muslcc bash
 
 echo "Building the Zig+Bash bootstrap smoke target"
 run_bazel --output_base="$STAGE2_OUTPUT_BASE" build \
   --define=compiler_seed=zig \
   --define=shell_seed=bash \
-  --disk_cache="$DISK_CACHE_ROOT/zig" \
   --jobs=1 \
   --repository_cache="$REPOSITORY_CACHE" \
   @stage2.bzl//internal:make

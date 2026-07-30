@@ -60,7 +60,6 @@ jobs:
         timeout-minutes: 315
         working-directory: e2e/consumer
         env:
-          DISK_CACHE_ROOT: ${{ runner.temp }}/stage2-e2e-disk-cache
           REMOTE_CACHE_BAZELRC: ${{ steps.remote_cache.outputs.bazelrc }}
           REPOSITORY_CACHE: ${{ runner.temp }}/stage2-e2e-repository-cache
           STAGE2_ARTIFACTS: ${{ runner.temp }}/stage2-e2e-artifacts
