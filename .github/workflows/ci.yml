@@ -15,6 +15,7 @@ jobs:
     name: External consumer bootstrap seed equivalence (${{ matrix.arch }})
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         include:
           - arch: x86_64
