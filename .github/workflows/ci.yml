@@ -53,7 +53,9 @@ jobs:
         id: remote_cache
         uses: thii/bazel-gha-remote-cache@a004d606b4310b2f350aa71697dc7c1d4590ae5b # v0.0.1
         with:
+          fail-job-on-cache-error: true
           mode: read-write
+          upload-concurrency: 1
 
       - name: Build seed lineages, smoke-test Zig+Bash, and compare outputs
         id: build
