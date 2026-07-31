@@ -15,7 +15,6 @@ jobs:
     name: External consumer bootstrap seed equivalence (${{ matrix.arch }})
     strategy:
       fail-fast: false
-      max-parallel: 1
       matrix:
         include:
           - arch: x86_64
@@ -45,26 +44,70 @@ jobs:
           restore-keys: |
             bazel-e2e-repositories-v2-${{ runner.os }}-${{ runner.arch }}-
 
+      - name: Restore musl.cc Bazel results
+        id: muslcc_cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/stage2-e2e-disk-cache/muslcc
+          key: bazel-disk-e2e-v4-muslcc-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion') }}-${{ hashFiles('.bazelignore', '.bazelrc', '.bazelversion', 'BUILD.bazel', 'MODULE.bazel', 'MODULE.bazel.lock', 'extensions.bzl', 'stage2.bzl', 'internal/**', 'trees/**', 'e2e/consumer/.bazelrc', 'e2e/consumer/**', '.github/workflows/ci.yml') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            bazel-disk-e2e-v4-muslcc-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion') }}-${{ hashFiles('.bazelignore', '.bazelrc', '.bazelversion', 'BUILD.bazel', 'MODULE.bazel', 'MODULE.bazel.lock', 'extensions.bzl', 'stage2.bzl', 'internal/**', 'trees/**', 'e2e/consumer/.bazelrc', 'e2e/consumer/**', '.github/workflows/ci.yml') }}-
+            bazel-disk-e2e-v4-muslcc-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion') }}-
+
+      - name: Restore Zig Bazel results
+        id: zig_cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/stage2-e2e-disk-cache/zig
+          key: bazel-disk-e2e-v4-zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion') }}-${{ hashFiles('.bazelignore', '.bazelrc', '.bazelversion', 'BUILD.bazel', 'MODULE.bazel', 'MODULE.bazel.lock', 'extensions.bzl', 'stage2.bzl', 'internal/**', 'trees/**', 'e2e/consumer/.bazelrc', 'e2e/consumer/**', '.github/workflows/ci.yml') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            bazel-disk-e2e-v4-zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion') }}-${{ hashFiles('.bazelignore', '.bazelrc', '.bazelversion', 'BUILD.bazel', 'MODULE.bazel', 'MODULE.bazel.lock', 'extensions.bzl', 'stage2.bzl', 'internal/**', 'trees/**', 'e2e/consumer/.bazelrc', 'e2e/consumer/**', '.github/workflows/ci.yml') }}-
+            bazel-disk-e2e-v4-zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion') }}-
+
+      - name: Restore Bash Bazel results
+        id: bash_cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/stage2-e2e-disk-cache/bash
+          key: bazel-disk-e2e-v4-bash-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion') }}-${{ hashFiles('.bazelignore', '.bazelrc', '.bazelversion', 'BUILD.bazel', 'MODULE.bazel', 'MODULE.bazel.lock', 'extensions.bzl', 'stage2.bzl', 'internal/**', 'trees/**', 'e2e/consumer/.bazelrc', 'e2e/consumer/**', '.github/workflows/ci.yml') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            bazel-disk-e2e-v4-bash-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion') }}-${{ hashFiles('.bazelignore', '.bazelrc', '.bazelversion', 'BUILD.bazel', 'MODULE.bazel', 'MODULE.bazel.lock', 'extensions.bzl', 'stage2.bzl', 'internal/**', 'trees/**', 'e2e/consumer/.bazelrc', 'e2e/consumer/**', '.github/workflows/ci.yml') }}-
+            bazel-disk-e2e-v4-bash-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion') }}-
+
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.19.0
         with:
           bazelisk-cache: true
 
-      - name: Start shared Bazel remote cache
-        id: remote_cache
-        uses: thii/bazel-gha-remote-cache@a004d606b4310b2f350aa71697dc7c1d4590ae5b # v0.0.1
-        with:
-          fail-job-on-cache-error: true
-          mode: read-write
-          upload-concurrency: 1
-
+      # Leave time to save completed actions when a cold run needs another try.
       - name: Build seed lineages, smoke-test Zig+Bash, and compare outputs
         id: build
         timeout-minutes: 315
         working-directory: e2e/consumer
         env:
-          REMOTE_CACHE_BAZELRC: ${{ steps.remote_cache.outputs.bazelrc }}
+          DISK_CACHE_ROOT: ${{ runner.temp }}/stage2-e2e-disk-cache
           REPOSITORY_CACHE: ${{ runner.temp }}/stage2-e2e-repository-cache
           STAGE2_ARTIFACTS: ${{ runner.temp }}/stage2-e2e-artifacts
           STAGE2_OUTPUT_BASE: ${{ runner.temp }}/stage2-e2e-output
         run: /usr/bin/timeout --signal=INT --kill-after=2m 300m bash compare-seeds.sh
+
+      - name: Save musl.cc Bazel results
+        if: ${{ !cancelled() && (steps.build.outcome == 'success' || steps.build.outcome == 'failure') }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/stage2-e2e-disk-cache/muslcc
+          key: ${{ steps.muslcc_cache.outputs.cache-primary-key }}
+
+      - name: Save Zig Bazel results
+        if: ${{ !cancelled() && (steps.build.outcome == 'success' || steps.build.outcome == 'failure') }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/stage2-e2e-disk-cache/zig
+          key: ${{ steps.zig_cache.outputs.cache-primary-key }}
+
+      - name: Save Bash Bazel results
+        if: ${{ !cancelled() && (steps.build.outcome == 'success' || steps.build.outcome == 'failure') }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/stage2-e2e-disk-cache/bash
+          key: ${{ steps.bash_cache.outputs.cache-primary-key }}
