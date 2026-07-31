@@ -265,8 +265,8 @@ conventional source builds, but gives up much of Bazel's native integration:
 
 ## Compared with Docker
 
-- No Docker or other container daemon is required. Bazel creates each action
-  sandbox directly from declared files and trees, which remain visible in the
-  action graph.
+- Although this resembles building from a Docker `scratch` image, no daemon is
+  required.
+- Inputs and outputs are clearly distinguished.
 - From stage 2 onward, library-owned actions use only executable build tools
   compiled from source.
