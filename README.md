@@ -30,8 +30,11 @@ e672e708cf7b2f39ea6e7623e690ea3236bfaf1a46597e3fce8f94c3343417a9  userland.tar.g
 ## Requirements and setup
 
 - Linux `x86_64` or `aarch64`
-- Bazel 9 or newer
+- Bazel 8.7.0 or 9.2.0
 - Linux user namespaces
+
+Bazel 8.0–8.6 and 9.0–9.1 lack the hermetic-sandbox `/proc` support required
+by the bootstrap actions.
 
 In your MODULE.bazel:
 

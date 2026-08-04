@@ -1,7 +1,7 @@
 # Private implementation graph; public aliases live in //trees.
 
 load(":bootstrap_tools.bzl", "source_bootstrap_tools")
-load(":build_defs.bzl", "autotools_build", "make_bootstrap", "tree_merge")
+load(":build_defs.bzl", "autotools_build", "hermetic_run", "make_bootstrap", "tree_merge")
 load(":compiler_seed.bzl", "stage2_compiler_seed")
 load(":shell_seed.bzl", "stage2_shell_seed")
 load(":stage2.bzl", "stage2_autotools_build", "stage2_run")
@@ -105,6 +105,28 @@ source_bootstrap_tools(
     toybox_main = "@toybox_src//:main.c",
     toybox_srcs = "@toybox_src//:srcs",
     visibility = ["//visibility:public"],
+)
+
+# Cheap CI contract check for the hermetic sandbox behavior used by every
+# bootstrap action. Keep this on the prebuilt BusyBox path: the full source
+# bootstrap is covered by the end-to-end jobs and takes hours on a cold cache.
+hermetic_run(
+    name = "hermetic-sandbox-smoke",
+    script = """test -r /proc/self/status
+readlink /proc/self/cwd >/dev/null
+test -d /sys/kernel
+test -c /dev/full
+test -d /dev/shm
+/bin/sh -c 'printf "hermetic sandbox ok\\n"' > %{OUT}
+""",
+    source_bootstrap_tools = select(
+        {
+            "@platforms//cpu:aarch64": "@busybox_linux_arm64//:bin/busybox.static",
+            "@platforms//cpu:x86_64": "@busybox_linux_x64//:bin/busybox.static",
+        },
+        no_match_error = _NO_MATCH,
+    ),
+    tags = ["manual"],
 )
 
 # The self-hosted host toolchain targets <arch>-unknown-linux-musl (same

@@ -438,5 +438,5 @@ The documented exports of `stage2.bzl`, the parameters above, and these tree
 labels are the public API. Other repository targets, scripts, logs, and example
 implementation details may change without notice.
 
-stage2.bzl requires Bazel 9 or later and supports selected `x86_64` and
-`aarch64` Linux builds.
+stage2.bzl supports Bazel 8.7.0 and 9.2.0 on selected `x86_64` and `aarch64`
+Linux builds.

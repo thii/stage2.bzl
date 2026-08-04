@@ -11,6 +11,34 @@ permissions:
   contents: read
 
 jobs:
+  bazel_8:
+    name: Bazel 8.7 compatibility
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      USE_BAZEL_VERSION: 8.7.0
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Allow the hermetic Linux sandbox
+        run: |
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.19.0
+        with:
+          bazelisk-cache: true
+
+      - name: Exercise the hermetic Linux sandbox
+        run: bazel build --lockfile_mode=off //internal:hermetic-sandbox-smoke
+
+      - name: Load the external consumer graph
+        working-directory: e2e/consumer
+        run: bazel query --lockfile_mode=off //...
+
   consumer:
     name: External consumer bootstrap seed equivalence (${{ matrix.arch }})
     strategy:
