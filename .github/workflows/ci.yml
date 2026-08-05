@@ -80,7 +80,7 @@ jobs:
 
       - name: Start shared Bazel remote cache
         id: remote_cache
-        uses: thii/bazel-gha-remote-cache@ec0d6c63ffb5b90c35b5306ce4fdce621a724306 # v0.0.5
+        uses: thii/bazel-gha-remote-cache@db0660eeb6c69ab023034e33ab3cd2d5201fa8c2 # v0.0.6
         with:
           expected-writers: "2"
           fail-job-on-cache-error: true
