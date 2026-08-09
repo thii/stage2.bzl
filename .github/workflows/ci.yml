@@ -148,7 +148,8 @@ jobs:
         uses: thii/bazel-gha-remote-cache@6794727832d09a0a98c6edbbd013a10ddac2925a # v0.0.7
         with:
           expected-writers: "6"
-          fail-job-on-cache-error: true
+          # Cache-service throttling must not override a successful Bazel build.
+          fail-job-on-cache-error: false
           github-token: ${{ github.token }}
           mode: read-write
           storage-mode: pack

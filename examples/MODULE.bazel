@@ -96,8 +96,12 @@ http_archive(
     build_file_content = _SRC_TREE_BUILD,
     sha256 = "bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16",
     strip_prefix = "zlib-1.3.2",
-    # fossils/ retains every release; zlib.net's top level rotates.
-    urls = ["https://zlib.net/fossils/zlib-1.3.2.tar.gz"],
+    # fossils/ retains every release; zlib.net's top level rotates. Keep it as
+    # a fallback for the identical upstream GitHub release asset.
+    urls = [
+        "https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz",
+        "https://zlib.net/fossils/zlib-1.3.2.tar.gz",
+    ],
 )
 
 http_archive(
