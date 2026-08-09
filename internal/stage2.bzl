@@ -1,4 +1,4 @@
-"""Shared configuration for building the example packages with stage 2.
+"""Shared configuration for the public stage-2 rule wrappers.
 
 Everything here describes the self-hosted <arch>-unknown-linux-musl
 stage-2 host toolchain and the from-source GNU userland: any action
@@ -58,61 +58,6 @@ TOOL_SUBDIR = select(
     no_match_error = NO_MATCH,
 )
 
-HOST_TRIPLE = select(
-    {
-        "@platforms//cpu:aarch64": "aarch64-unknown-linux-musl",
-        "@platforms//cpu:x86_64": "x86_64-unknown-linux-musl",
-    },
-    no_match_error = NO_MATCH,
-)
-
-OPT_FLAGS = [
-    "CFLAGS=-O2",
-    "CXXFLAGS=-O2",
-    # libtool intercepts a plain -static; --static reaches the driver.
-    "LDFLAGS=--static",
-]
-
-# --build for Canadian-cross configures (build != host != target). The
-# stage-2 toolchain's triplet is the build system; config.guess would
-# misreport it as -gnu inside the sandbox.
-BUILD_TRIPLE_ARG = select(
-    {
-        "@platforms//cpu:aarch64": ["--build=aarch64-unknown-linux-musl"],
-        "@platforms//cpu:x86_64": ["--build=x86_64-unknown-linux-musl"],
-    },
-    no_match_error = NO_MATCH,
-)
-
-# Compiler spellings for actions whose HOST is Windows (Canadian cross):
-# a caller-supplied build->host mingw cross GCC provides these commands.
-# Static output needs nothing but the OS's own DLLs at runtime.
-MINGW_HOST_CC = [
-    "CC=x86_64-w64-mingw32-gcc -static",
-    "CXX=x86_64-w64-mingw32-g++ -static",
-]
-
-# Like OPT_FLAGS, for PE host binaries: --no-insert-timestamp keeps the
-# PE header timestamp field zero so Windows-hosted trees are reproducible.
-W64_OPT_FLAGS = [
-    "CFLAGS=-O2",
-    "CXXFLAGS=-O2",
-    "LDFLAGS=--static -Wl,--no-insert-timestamp",
-]
-
-BINUTILS_ARGS = [
-    "--disable-nls",
-    "--disable-werror",
-    "--disable-gdb",
-    "--disable-gdbserver",
-    "--disable-sim",
-    "--disable-gprofng",
-    "--disable-shared",
-    "--enable-static",
-    "--enable-deterministic-archives",
-    "--disable-dependency-tracking",
-]
-
 # Label() (not plain strings) so the references bind to THIS module:
 # macro-supplied label strings resolve relative to the calling package,
 # which for a dependent module would be the wrong repository.
@@ -140,8 +85,8 @@ def _reject_bootstrap_attrs(wrapper, kwargs):
 def stage2_autotools_build(use_default_cc = True, stage_cc = True, **kwargs):
     """autotools_build preconfigured for the stage-2 toolchain + userland.
 
-    BUILD files cannot splat **kwargs, so packages that need bespoke
-    targets (e.g. mingw's multi-step build) use this wrapper instead.
+    BUILD files cannot splat **kwargs, so callers needing bespoke targets
+    use this wrapper instead.
 
     The default compiler is appended after caller-supplied path_trees
     unless use_default_cc is false. STAGE_CC is appended to

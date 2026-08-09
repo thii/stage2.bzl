@@ -9,6 +9,35 @@ local_path_override(
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+gcc_combined_source_repository = use_repo_rule("//:gcc_combined_repo.bzl", "gcc_combined_source_repository")
+
+_SRC_TREE_BUILD = """filegroup(
+    name = "srcs",
+    srcs = glob(["**"]),
+    visibility = ["//visibility:public"],
+)
+exports_files(["configure"])
+"""
+
+http_archive(
+    name = "binutils_src",
+    build_file_content = _SRC_TREE_BUILD,
+    sha256 = "c50c0e7f9cb188980e2cc97e4537626b1672441815587f1eab69d2a1bfbef5d2",
+    strip_prefix = "binutils-2.45",
+    urls = [
+        "https://ftpmirror.gnu.org/binutils/binutils-2.45.tar.xz",
+        "https://ftp.gnu.org/gnu/binutils/binutils-2.45.tar.xz",
+    ],
+)
+
+# The consumer owns the combined GCC/newlib/ISL source repository used by its
+# bare-metal recipes rather than borrowing source labels from stage2.bzl.
+gcc_combined_source_repository(
+    name = "gcc_combined_src",
+)
+
 http_archive(
     name = "mingw_w64_src",
     build_file_content = """filegroup(
@@ -24,4 +53,88 @@ exports_files([
     sha256 = "cc41898aac4b6e8dd5cffd7331b9d9515b912df4420a3a612b5ea2955bbeed2f",
     strip_prefix = "mingw-w64-v12.0.0",
     urls = ["https://downloads.sourceforge.net/project/mingw-w64/mingw-w64/mingw-w64-release/mingw-w64-v12.0.0.tar.bz2"],
+)
+
+# CMake, Python, and LLVM are consumer-owned inputs for the Darwin-hosted
+# clang examples. CMake self-bootstraps with only a C++ compiler and make;
+# LLVM requires CMake and Python 3.
+http_archive(
+    name = "cmake_src",
+    build_file_content = _SRC_TREE_BUILD,
+    sha256 = "a6d2eb1ebeb99130dfe63ef5a340c3fdb11431cce3d7ca148524c125924cea68",
+    strip_prefix = "cmake-3.31.7",
+    urls = ["https://github.com/Kitware/CMake/releases/download/v3.31.7/cmake-3.31.7.tar.gz"],
+)
+
+http_archive(
+    name = "python_src",
+    build_file_content = _SRC_TREE_BUILD,
+    sha256 = "c909157bb25ec114e5869124cc2a9c4a4d4c1e957ca4ff553f1edc692101154e",
+    strip_prefix = "Python-3.12.8",
+    urls = ["https://www.python.org/ftp/python/3.12.8/Python-3.12.8.tar.xz"],
+)
+
+# The exported CMakeLists.txt lets build scripts locate LLVM's source root;
+# a filegroup alone does not expose its root path.
+http_archive(
+    name = "llvm_src",
+    build_file_content = """filegroup(
+    name = "srcs",
+    srcs = glob(["**"]),
+    visibility = ["//visibility:public"],
+)
+exports_files(["llvm/CMakeLists.txt"])
+""",
+    sha256 = "922f1817a0df7b1489272d18134ee0087a8b068828f87ac63b9861b1a9965888",
+    strip_prefix = "llvm-project-22.1.8.src",
+    urls = ["https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.8/llvm-project-22.1.8.src.tar.xz"],
+)
+
+# Sources for extracting and pruning the Apple SDK used by the Darwin builds.
+http_archive(
+    name = "zlib_src",
+    build_file_content = _SRC_TREE_BUILD,
+    sha256 = "bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16",
+    strip_prefix = "zlib-1.3.2",
+    # fossils/ retains every release; zlib.net's top level rotates.
+    urls = ["https://zlib.net/fossils/zlib-1.3.2.tar.gz"],
+)
+
+http_archive(
+    name = "xz_src",
+    build_file_content = _SRC_TREE_BUILD,
+    sha256 = "3d3a1b973af218114f4f889bbaa2f4c037deaae0c8e815eec381c3d546b974a0",
+    strip_prefix = "xz-5.8.3",
+    urls = ["https://github.com/tukaani-project/xz/releases/download/v5.8.3/xz-5.8.3.tar.gz"],
+)
+
+http_archive(
+    name = "libmd_src",
+    build_file_content = _SRC_TREE_BUILD,
+    sha256 = "1bd6aa42275313af3141c7cf2e5b964e8b1fd488025caf2f971f43b00776b332",
+    strip_prefix = "libmd-1.1.0",
+    urls = ["https://archive.hadrons.org/software/libmd/libmd-1.1.0.tar.xz"],
+)
+
+http_archive(
+    name = "expat_src",
+    build_file_content = _SRC_TREE_BUILD,
+    sha256 = "21b778b34ec837c2ac285aef340f9fb5fa063a811b21ea4d2412a9702c88995c",
+    strip_prefix = "expat-2.7.2",
+    urls = ["https://github.com/libexpat/libexpat/releases/download/R_2_7_2/expat-2.7.2.tar.xz"],
+)
+
+http_archive(
+    name = "libarchive_src",
+    build_file_content = _SRC_TREE_BUILD,
+    sha256 = "d3a8ba457ae25c27c84fd2830a2efdcc5b1d40bf585d4eb0d35f47e99e5d4774",
+    strip_prefix = "libarchive-3.8.7",
+    urls = ["https://libarchive.org/downloads/libarchive-3.8.7.tar.xz"],
+)
+
+http_file(
+    name = "macos_sdk_pkg",
+    downloaded_file_path = "CLTools_macOSNMOS_SDK.pkg",
+    sha256 = "debe353b27a13cd678b26ab216a040acf07b62c0639d8ac522df4ca07d121eb2",
+    url = "https://swcdn.apple.com/content/downloads/33/19/140-17812-A_21ZLMMLY4E/zu3xwktttpoe71qiawhzgzvqss6rovawsa/CLTools_macOSNMOS_SDK.pkg",
 )

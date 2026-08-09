@@ -85,9 +85,9 @@ stage2_run(
     inputs = {
         "COMPUTE_C": ":compute.c",
         "HELLO_C": ":hello.c",
-        "SDK": "@stage2.bzl//trees:macos-sdk",
+        "SDK": "//tooling:macos-sdk",
     },
-    path_trees = ["@stage2.bzl//trees:clang"],
+    path_trees = ["//tooling:host-clang-s2"],
     script = """clang -target arm64-apple-macos11 -isysroot %{SDK} -fuse-ld=lld \
     -Os -Wall -o %{OUT} %{HELLO_C} %{COMPUTE_C}
 magic=$(od -An -tx1 -N4 %{OUT} | tr -d ' \\n')

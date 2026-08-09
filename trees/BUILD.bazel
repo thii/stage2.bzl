@@ -28,28 +28,3 @@ alias(
         "make",
     ]
 ]
-
-alias(
-    name = "bsdtar",
-    actual = "//internal:libarchive-s2",
-)
-
-alias(
-    name = "cmake",
-    actual = "//internal:cmake-s2",
-)
-
-alias(
-    name = "python",
-    actual = "//internal:python-s2",
-)
-
-alias(
-    name = "clang",
-    actual = "//internal:host-clang-s2",
-)
-
-alias(
-    name = "macos-sdk",
-    actual = "//internal:macos-sdk",
-)

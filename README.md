@@ -235,8 +235,9 @@ stage2_tree_merge(
 
 Pass it as `userland = ":minimal-userland"`. The sandbox preamble requires
 `bin/bash`, `bin/mkdir`, and `bin/ln`; each rule or script may require more.
-Use `path_trees` for optional tools such as `@stage2.bzl//trees:clang`, or
-merge trees when one combined userland is useful.
+Use `path_trees` for optional tools built in your own workspace, or merge trees
+when one combined userland is useful. The `examples` workspace demonstrates
+how consumers bootstrap GCC, Clang, and their supporting tools.
 
 ## Trust boundary
 

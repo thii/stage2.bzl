@@ -1,4 +1,4 @@
-/* Internal sdkprune helper: delete every Mach-O file under a tree.
+/* Example sdkprune helper: delete every Mach-O file under a tree.
  *
  * The Apple SDK is essentially text (headers plus .tbd linker stubs),
  * but each release carries a couple dozen prebuilt Mach-O leftovers:

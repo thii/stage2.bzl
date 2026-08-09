@@ -1,29 +1,28 @@
 # Darwin-hosted clang + lld 22.1.8 examples, Canadian-crossed with the
-# reusable Linux-native @stage2.bzl//trees:clang and the pruned
-# @stage2.bzl//trees:macos-sdk. No Mach-O output executes during these builds.
+# Linux-native clang and pruned SDK bootstrapped by this consumer workspace.
+# No Mach-O output executes during these builds.
 
-load("@stage2.bzl//:examples_support.bzl", "LLVM_CMAKE_LISTS", "LLVM_SRCS")
 load("@stage2.bzl", "stage2_dist_tarball", "stage2_run")
 
 package(default_visibility = ["//:__subpackages__"])
 
 # arm64-Darwin-hosted clang + lld, Canadian-crossed entirely inside the
-# Linux sandbox. @stage2.bzl//trees:clang is both the build->host compiler/tool
+# Linux sandbox. //tooling:host-clang-s2 is both the build->host compiler/tool
 # suite and the source of native TableGen executables.
 stage2_run(
     name = "clang-darwin-arm64",
-    extra_inputs = [LLVM_SRCS],
+    extra_inputs = ["@llvm_src//:srcs"],
     inputs = {
-        "HOST_LLVM": "@stage2.bzl//trees:clang",
-        "LLVM_CML": LLVM_CMAKE_LISTS,
-        "PYTHON": "@stage2.bzl//trees:python",
-        "SDK": "@stage2.bzl//trees:macos-sdk",
+        "HOST_LLVM": "//tooling:host-clang-s2",
+        "LLVM_CML": "@llvm_src//:llvm/CMakeLists.txt",
+        "PYTHON": "//tooling:python-s2",
+        "SDK": "//tooling:macos-sdk",
     },
     out_tree = True,
     path_trees = [
-        "@stage2.bzl//trees:clang",
-        "@stage2.bzl//trees:cmake",
-        "@stage2.bzl//trees:python",
+        "//tooling:host-clang-s2",
+        "//tooling:cmake-s2",
+        "//tooling:python-s2",
     ],
     script = """llvmdir=$(dirname %{LLVM_CML})
 hostllvm=%{HOST_LLVM}
@@ -100,22 +99,22 @@ stage2_dist_tarball(
 )
 
 # x86_64-Darwin-hosted clang + lld, Canadian-crossed entirely inside the
-# Linux sandbox. @stage2.bzl//trees:clang is both the build->host compiler/tool
+# Linux sandbox. //tooling:host-clang-s2 is both the build->host compiler/tool
 # suite and the source of native TableGen executables.
 stage2_run(
     name = "clang-darwin-x86_64",
-    extra_inputs = [LLVM_SRCS],
+    extra_inputs = ["@llvm_src//:srcs"],
     inputs = {
-        "HOST_LLVM": "@stage2.bzl//trees:clang",
-        "LLVM_CML": LLVM_CMAKE_LISTS,
-        "PYTHON": "@stage2.bzl//trees:python",
-        "SDK": "@stage2.bzl//trees:macos-sdk",
+        "HOST_LLVM": "//tooling:host-clang-s2",
+        "LLVM_CML": "@llvm_src//:llvm/CMakeLists.txt",
+        "PYTHON": "//tooling:python-s2",
+        "SDK": "//tooling:macos-sdk",
     },
     out_tree = True,
     path_trees = [
-        "@stage2.bzl//trees:clang",
-        "@stage2.bzl//trees:cmake",
-        "@stage2.bzl//trees:python",
+        "//tooling:host-clang-s2",
+        "//tooling:cmake-s2",
+        "//tooling:python-s2",
     ],
     script = """llvmdir=$(dirname %{LLVM_CML})
 hostllvm=%{HOST_LLVM}

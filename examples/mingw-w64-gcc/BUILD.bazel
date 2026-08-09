@@ -9,19 +9,11 @@
 # no std::thread in libstdc++), C/C++ only, no multilib.
 
 load(
-    "@stage2.bzl//:examples_support.bzl",
-    "BINUTILS_CONFIGURE",
-    "BINUTILS_SRCS",
-    "GCC_COMBINED_CONFIGURE",
-    "GCC_COMBINED_SRCS",
-)
-load(
     "@stage2.bzl",
-    "BINUTILS_ARGS",
-    "OPT_FLAGS",
     "stage2_autotools_build",
     "stage2_dist_tarball",
 )
+load("//:gcc.bzl", "BINUTILS_ARGS", "OPT_FLAGS")
 
 package(default_visibility = ["//:__subpackages__"])
 
@@ -29,8 +21,8 @@ _TARGET = "x86_64-w64-mingw32"
 
 stage2_autotools_build(
     name = "mingw-binutils",
-    srcs = BINUTILS_SRCS,
-    configure = BINUTILS_CONFIGURE,
+    srcs = "@binutils_src//:srcs",
+    configure = "@binutils_src//:configure",
     configure_args = ["--target=" + _TARGET] + BINUTILS_ARGS + OPT_FLAGS,
 )
 
@@ -53,8 +45,8 @@ stage2_autotools_build(
 # (all-gcc/install-gcc): enough to compile the CRT, no target libraries.
 stage2_autotools_build(
     name = "mingw-gcc-stage1",
-    srcs = GCC_COMBINED_SRCS,
-    configure = GCC_COMBINED_CONFIGURE,
+    srcs = "@gcc_combined_src//:srcs",
+    configure = "@gcc_combined_src//:configure",
     configure_args = [
         "--target=" + _TARGET,
         "--enable-languages=c",
@@ -92,8 +84,8 @@ stage2_autotools_build(
 # fresh configure/make builds compiler and target libraries in order.
 stage2_autotools_build(
     name = "mingw-w64-gcc",
-    srcs = GCC_COMBINED_SRCS,
-    configure = GCC_COMBINED_CONFIGURE,
+    srcs = "@gcc_combined_src//:srcs",
+    configure = "@gcc_combined_src//:configure",
     configure_args = [
         "--target=" + _TARGET,
         "--enable-languages=c,c++",

@@ -1,24 +1,66 @@
-"""The `gcc` macro: a bare-metal newlib GCC cross toolchain package.
+"""Example recipes for bare-metal newlib GCC cross toolchains.
 
-Scope: this is specifically the newlib bare-metal recipe (binutils +
-GCC/newlib combined tree). Targets with their own C runtime story build
-their sequence out of stage2_autotools_build instead — see the
-examples/mingw-w64-gcc package.
+These macros deliberately live in the consumer workspace. They compose the
+generic stage2 rules with consumer-owned binutils and GCC/newlib source
+repositories declared in examples/MODULE.bazel.
 """
 
 load(
-    "//internal:stage2.bzl",
-    "BINUTILS_ARGS",
-    "BUILD_TRIPLE_ARG",
-    "MINGW_HOST_CC",
-    "OPT_FLAGS",
-    "W64_OPT_FLAGS",
+    "@stage2.bzl",
     "stage2_autotools_build",
     "stage2_dist_tarball",
     "stage2_run",
 )
 
 visibility("//...")
+
+_NO_MATCH = "the examples workspace's hermetic prerequisites are only wired for x86_64/aarch64 Linux hosts"
+
+OPT_FLAGS = [
+    "CFLAGS=-O2",
+    "CXXFLAGS=-O2",
+    # libtool intercepts a plain -static; --static reaches the driver.
+    "LDFLAGS=--static",
+]
+
+# --build for Canadian-cross configures (build != host != target). The
+# stage-2 toolchain's triplet is the build system; config.guess would
+# misreport it as -gnu inside the sandbox.
+BUILD_TRIPLE_ARG = select(
+    {
+        "@platforms//cpu:aarch64": ["--build=aarch64-unknown-linux-musl"],
+        "@platforms//cpu:x86_64": ["--build=x86_64-unknown-linux-musl"],
+    },
+    no_match_error = _NO_MATCH,
+)
+
+# Compiler spellings for actions whose HOST is Windows (Canadian cross):
+# a caller-supplied build->host mingw cross GCC provides these commands.
+MINGW_HOST_CC = [
+    "CC=x86_64-w64-mingw32-gcc -static",
+    "CXX=x86_64-w64-mingw32-g++ -static",
+]
+
+# Like OPT_FLAGS, for PE host binaries: --no-insert-timestamp keeps the
+# PE header timestamp field zero so Windows-hosted trees are reproducible.
+W64_OPT_FLAGS = [
+    "CFLAGS=-O2",
+    "CXXFLAGS=-O2",
+    "LDFLAGS=--static -Wl,--no-insert-timestamp",
+]
+
+BINUTILS_ARGS = [
+    "--disable-nls",
+    "--disable-werror",
+    "--disable-gdb",
+    "--disable-gdbserver",
+    "--disable-sim",
+    "--disable-gprofng",
+    "--disable-shared",
+    "--enable-static",
+    "--enable-deterministic-archives",
+    "--disable-dependency-tracking",
+]
 
 GCC_NEWLIB_ARGS = [
     "--enable-languages=c,c++",
@@ -36,14 +78,11 @@ GCC_NEWLIB_ARGS = [
     "--disable-libstdcxx-pch",
 ]
 
-def gcc(name, target, gcc_args = [], gcc_version = "15.2.0"):
-    """A bare-metal newlib GCC cross toolchain: binutils + gcc + dist.
+def newlib_gcc(name, target, gcc_args = [], gcc_version = "15.2.0"):
+    """Builds a bare-metal newlib GCC cross toolchain and distribution.
 
-    Generates:
-      <name>-binutils : binutils 2.45 for `target`
-      <name>          : merged toolchain prefix (gcc 15.2.0 + newlib 4.5.0
-                        combined tree, installed over the binutils tree)
-      dist            : <name>-<gcc_version>.tar.gz
+    Generates a binutils target, a merged GCC/newlib toolchain, and a `dist`
+    archive target in the calling package.
     """
     stage2_autotools_build(
         name = name + "-binutils",
@@ -68,28 +107,21 @@ def gcc(name, target, gcc_args = [], gcc_version = "15.2.0"):
 
 _W64_HOST = "x86_64-w64-mingw32"
 
-def gcc_w64(name, target, host_toolchain, target_toolchain, gcc_args = [], gcc_version = "15.2.0"):
-    """The Windows-hosted (Canadian cross) variant of `gcc`.
+def newlib_gcc_w64(name, target, host_toolchain, target_toolchain, gcc_args = [], gcc_version = "15.2.0"):
+    """Builds the Windows-hosted Canadian-cross variant of `newlib_gcc`.
 
-    Every action still runs inside the empty Linux sandbox; only the
-    produced binaries are PE executables. Three toolchains participate,
-    all of them stage-2 artifacts:
-      - CC/CXX: `host_toolchain`, a build->host mingw cross, compiles
-        the compiler's own sources into static .exe files;
-      - CC_FOR_BUILD: stage-2 compiles the build-time generators;
-      - `target_toolchain`: the Linux-hosted build->target cross (same
-        GCC version) builds libgcc/newlib/libstdc++, because the freshly
-        built xgcc is a Windows binary and cannot run here.
-
-    Generates <name>-binutils, <name>, <name>-pe-check, and dist.
+    Every action still runs in the Linux sandbox. `host_toolchain` compiles
+    the compiler itself as Windows executables, while `target_toolchain`
+    builds target libraries because those fresh Windows executables cannot
+    run during the build.
 
     Args:
-      name: Base name for the generated targets.
+      name: Target name and output prefix.
       target: GCC target triplet.
-      host_toolchain: Linux-hosted build-to-x86_64-w64-mingw32 tree.
-      target_toolchain: Linux-hosted build-to-target toolchain tree.
-      gcc_args: Additional arguments passed to GCC's configure.
-      gcc_version: Version embedded in the distribution tarball name.
+      host_toolchain: Build-to-Windows compiler tree.
+      target_toolchain: Build-to-target compiler tree.
+      gcc_args: Additional GCC configure arguments.
+      gcc_version: Version suffix used for the distribution archive.
     """
     canadian_args = BUILD_TRIPLE_ARG + [
         "--host=" + _W64_HOST,
@@ -119,11 +151,8 @@ def gcc_w64(name, target, host_toolchain, target_toolchain, gcc_args = [], gcc_v
         srcs = Label("@gcc_combined_src//:srcs"),
     )
 
-    # Windows binaries cannot execute in the sandbox, so the end-to-end
-    # check is structural: every installed bin/*.exe must be a real PE32+
-    # image — DOS MZ magic, a valid e_lfanew pointing at the PE\\0\\0
-    # signature, and COFF machine 0x8664 (x86_64) — with a full
-    # complement of them.
+    # Windows binaries cannot execute in the sandbox, so verify that every
+    # installed bin/*.exe is an x86_64 PE image and that the set is complete.
     stage2_run(
         name = name + "-pe-check",
         inputs = {"TREE": ":" + name},

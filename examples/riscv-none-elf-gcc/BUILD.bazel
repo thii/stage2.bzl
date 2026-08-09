@@ -4,11 +4,11 @@
 # Deliberately narrowed for build time: single multilib instead of the
 # usual ~40-entry list, C/C++ only (no Fortran), no bundled GDB.
 
-load("@stage2.bzl", "stage2_gcc")
+load("//:gcc.bzl", "newlib_gcc")
 
 package(default_visibility = ["//:__subpackages__"])
 
-stage2_gcc(
+newlib_gcc(
     name = "riscv-none-elf-gcc",
     gcc_args = [
         "--with-arch=rv32imac",

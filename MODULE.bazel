@@ -23,8 +23,6 @@ use_repo(shell_seeds, "stage2_shell_seeds")
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
-http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
-
 _SRC_TREE_BUILD = """filegroup(
     name = "srcs",
     srcs = glob(["**"]),
@@ -164,101 +162,6 @@ http_archive(
     ],
 )
 
-# CMake, Python and LLVM: pinned for //internal:host-clang-s2 and the
-# Darwin-hosted clang examples. CMake self-bootstraps with only a C++
-# compiler and make; LLVM requires CMake and Python 3.
-http_archive(
-    name = "cmake_src",
-    build_file_content = _SRC_TREE_BUILD,
-    sha256 = "a6d2eb1ebeb99130dfe63ef5a340c3fdb11431cce3d7ca148524c125924cea68",
-    strip_prefix = "cmake-3.31.7",
-    urls = ["https://github.com/Kitware/CMake/releases/download/v3.31.7/cmake-3.31.7.tar.gz"],
-)
-
-http_archive(
-    name = "python_src",
-    build_file_content = _SRC_TREE_BUILD,
-    sha256 = "c909157bb25ec114e5869124cc2a9c4a4d4c1e957ca4ff553f1edc692101154e",
-    strip_prefix = "Python-3.12.8",
-    urls = ["https://www.python.org/ftp/python/3.12.8/Python-3.12.8.tar.xz"],
-)
-
-# LLVM 22.1.8: clang + lld for //internal:host-clang-s2 and the Darwin
-# examples. The exported CMakeLists.txt is how build scripts locate the
-# source root (filegroups have no root).
-http_archive(
-    name = "llvm_src",
-    build_file_content = """filegroup(
-    name = "srcs",
-    srcs = glob(["**"]),
-    visibility = ["//visibility:public"],
-)
-exports_files(["llvm/CMakeLists.txt"])
-""",
-    sha256 = "922f1817a0df7b1489272d18134ee0087a8b068828f87ac63b9861b1a9965888",
-    strip_prefix = "llvm-project-22.1.8.src",
-    urls = ["https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.8/llvm-project-22.1.8.src.tar.xz"],
-)
-
-# ---------------------------------------------------------------------------
-# macOS host support: sources for the SDK-extraction toolchain (zlib +
-# liblzma + libarchive/bsdtar — the .pkg is xar-wrapped, pbzx-compressed
-# cpio), and the Apple Command Line Tools SDK itself.
-# ---------------------------------------------------------------------------
-
-http_archive(
-    name = "zlib_src",
-    build_file_content = _SRC_TREE_BUILD,
-    sha256 = "bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16",
-    strip_prefix = "zlib-1.3.2",
-    # fossils/ retains every release; zlib.net's top level rotates.
-    urls = ["https://zlib.net/fossils/zlib-1.3.2.tar.gz"],
-)
-
-http_archive(
-    name = "xz_src",
-    build_file_content = _SRC_TREE_BUILD,
-    sha256 = "3d3a1b973af218114f4f889bbaa2f4c037deaae0c8e815eec381c3d546b974a0",
-    strip_prefix = "xz-5.8.3",
-    urls = ["https://github.com/tukaani-project/xz/releases/download/v5.8.3/xz-5.8.3.tar.gz"],
-)
-
-# libmd: MD5/SHA1 for libarchive — its xar reader is also compiled out
-# without digest providers (the xar TOC carries checksums), and OpenSSL
-# stays out of this tree.
-http_archive(
-    name = "libmd_src",
-    build_file_content = _SRC_TREE_BUILD,
-    sha256 = "1bd6aa42275313af3141c7cf2e5b964e8b1fd488025caf2f971f43b00776b332",
-    strip_prefix = "libmd-1.1.0",
-    urls = ["https://archive.hadrons.org/software/libmd/libmd-1.1.0.tar.xz"],
-)
-
-# expat: the XML parser libarchive's xar reader requires (the xar table
-# of contents is XML; without a parser the format is compiled out).
-http_archive(
-    name = "expat_src",
-    build_file_content = _SRC_TREE_BUILD,
-    sha256 = "21b778b34ec837c2ac285aef340f9fb5fa063a811b21ea4d2412a9702c88995c",
-    strip_prefix = "expat-2.7.2",
-    urls = ["https://github.com/libexpat/libexpat/releases/download/R_2_7_2/expat-2.7.2.tar.xz"],
-)
-
-http_archive(
-    name = "libarchive_src",
-    build_file_content = _SRC_TREE_BUILD,
-    sha256 = "d3a8ba457ae25c27c84fd2830a2efdcc5b1d40bf585d4eb0d35f47e99e5d4774",
-    strip_prefix = "libarchive-3.8.7",
-    urls = ["https://libarchive.org/downloads/libarchive-3.8.7.tar.xz"],
-)
-
-http_file(
-    name = "macos_sdk_pkg",
-    downloaded_file_path = "CLTools_macOSNMOS_SDK.pkg",
-    sha256 = "debe353b27a13cd678b26ab216a040acf07b62c0639d8ac522df4ca07d121eb2",
-    url = "https://swcdn.apple.com/content/downloads/33/19/140-17812-A_21ZLMMLY4E/zu3xwktttpoe71qiawhzgzvqss6rovawsa/CLTools_macOSNMOS_SDK.pkg",
-)
-
 # musl libc: the C library of the self-hosted stage-1/stage-2 host
 # toolchains (//internal:host-gcc-s1/-s2). musl builds with no kernel
 # headers and no tools beyond sh/make/cc.
@@ -270,14 +173,13 @@ http_archive(
     urls = ["https://musl.libc.org/releases/musl-1.2.5.tar.gz"],
 )
 
-# GCC 15.2.0 with newlib 4.5.0 and the gmp/mpfr/mpc/isl prerequisites
-# assembled into a single "combined tree" (the versions match
-# gcc-15.2.0/contrib/download_prerequisites). See the repository rule for
-# the pinned URLs and checksums of the individual archives.
-gcc_combined_src_repo = use_repo_rule("//internal:gcc_combined_repo.bzl", "gcc_combined_src_repo")
+# GCC 15.2.0 with the gmp/mpfr/mpc prerequisites assembled into a single
+# source tree. The default-userland host compiler does not use newlib or ISL,
+# so this repository does not fetch them.
+gcc_source_repo = use_repo_rule("//internal:gcc_source_repo.bzl", "gcc_source_repo")
 
-gcc_combined_src_repo(
-    name = "gcc_combined_src",
+gcc_source_repo(
+    name = "gcc_src",
 )
 
 # Default fully static compiler seeds from musl.cc (GCC 11.2.1). A root module

@@ -1,17 +1,15 @@
-"""Internal repository rule assembling the GCC "combined tree".
+"""Internal repository rule assembling the host GCC source tree.
 
-GCC's top-level build system natively supports building in-tree copies of
-its prerequisites (gmp/mpfr/mpc/isl, versions from
-contrib/download_prerequisites) and of newlib/libgloss (the classic
-one-tree cross build). Assembling the tree at fetch time means the build
-action needs exactly one source input and no network.
+GCC's top-level build supports in-tree copies of GMP, MPFR, and MPC. The
+stage-2 Linux-musl host compiler uses those prerequisites but explicitly
+disables ISL and does not use newlib, so this repository contains only the
+source closure needed by the default userland.
 
 Layout produced (repository root = GCC source root):
     configure, gcc/, libstdc++-v3/, ...   from gcc-15.2.0.tar.xz
-    gmp/, mpfr/, mpc/, isl/               extracted in place
-    newlib/, libgloss/                    from newlib-4.5.0.20241231.tar.gz
+    gmp/, mpfr/, mpc/                     extracted in place
 
-In-tree gmp is configured by GCC with assembly disabled (generic C), which
+In-tree GMP is configured by GCC with assembly disabled (generic C), which
 also removes its build-time m4 requirement.
 """
 
@@ -24,15 +22,6 @@ _GCC = struct(
     ],
     sha256 = "438fd996826b0c82485a29da03a72d71d6e3541a83ec702df4271f6fe025d24e",
     strip_prefix = "gcc-15.2.0",
-)
-
-_NEWLIB = struct(
-    url = [
-        "https://mirrors.kernel.org/sourceware/newlib/newlib-4.5.0.20241231.tar.gz",
-        "https://sourceware.org/pub/newlib/newlib-4.5.0.20241231.tar.gz",
-    ],
-    sha256 = "33f12605e0054965996c25c1382b3e463b0af91799001f5bb8c0630f2ec8c852",
-    strip_prefix = "newlib-4.5.0.20241231",
 )
 
 # name in tree -> archive; versions per gcc-15.2.0/contrib/download_prerequisites.
@@ -64,15 +53,6 @@ _PREREQUISITES = {
         sha256 = "17503d2c395dfcf106b622dc142683c1199431d095367c6aacba6eec30340459",
         strip_prefix = "mpc-1.2.1",
     ),
-    "isl": struct(
-        url = [
-            "https://mirrors.kernel.org/sourceware/gcc/infrastructure/isl-0.24.tar.bz2",
-            "https://libisl.sourceforge.io/isl-0.24.tar.bz2",
-            "https://gcc.gnu.org/pub/gcc/infrastructure/isl-0.24.tar.bz2",
-        ],
-        sha256 = "fcf78dd9656c10eb8cf9fbd5f59a0b6b01386205fe1934b3b287a0a1898145c0",
-        strip_prefix = "isl-0.24",
-    ),
 }
 
 _BUILD_FILE = """filegroup(
@@ -99,33 +79,10 @@ def _impl(rctx):
             stripPrefix = archive.strip_prefix,
             output = name,
         )
-    rctx.download_and_extract(
-        url = _NEWLIB.url,
-        sha256 = _NEWLIB.sha256,
-        stripPrefix = _NEWLIB.strip_prefix,
-        output = "_newlib",
-    )
-
-    # Bazel's repository API performs the filesystem assembly directly, so
-    # fetching this source tree does not execute a host or prebuilt utility.
-    for d in ["newlib", "libgloss"]:
-        rctx.rename("_newlib/" + d, d)
-
-    # Newlib's release tarball also carries headers in its top-level
-    # include/ that the target code includes via the shared toplevel
-    # include directory (e.g. arm-acle-compat.h for the Arm ports).
-    # Merge them into the GCC tree's include/ without overwriting GCC's own
-    # copies of shared headers.
-    include = rctx.path("include")
-    for entry in rctx.path("_newlib/include").readdir():
-        destination = include.get_child(entry.basename)
-        if not destination.exists:
-            rctx.rename(entry, destination)
-    rctx.delete("_newlib")
 
     rctx.file("BUILD.bazel", _BUILD_FILE)
 
-gcc_combined_src_repo = repository_rule(
+gcc_source_repo = repository_rule(
     implementation = _impl,
-    doc = "GCC 15.2.0 combined source tree with in-tree newlib and prerequisites.",
+    doc = "GCC 15.2.0 source tree with the host compiler prerequisites.",
 )

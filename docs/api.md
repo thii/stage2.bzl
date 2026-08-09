@@ -245,44 +245,6 @@ stage2_dist_tarball(
 Creates a timestamp-normalized, name-sorted `.tar.gz` archive from `tree`. The
 userland must provide `cp`, `find`, `touch`, `tar`, and `gzip`.
 
-### GCC helpers
-
-`stage2_gcc` builds a Linux-hosted bare-metal GCC/newlib toolchain;
-`stage2_gcc_w64` builds its Windows-hosted variant.
-
-```starlark
-load("@stage2.bzl", "stage2_gcc", "stage2_gcc_w64")
-
-stage2_gcc(
-    name,
-    target,
-    gcc_args = [],
-    gcc_version = "15.2.0",
-)
-
-stage2_gcc_w64(
-    name,
-    target,
-    host_toolchain,
-    target_toolchain,
-    gcc_args = [],
-    gcc_version = "15.2.0",
-)
-```
-
-`stage2_gcc` creates `<name>-binutils`, `<name>`, and `dist`, whose output is
-`<name>-<gcc_version>.tar.gz`. `stage2_gcc_w64` also creates
-`<name>-pe-check`, a structural x86_64 PE check that does not execute the
-Windows programs. Because `dist` has a fixed name, call either helper at most
-once per package.
-
-The helpers build GCC 15.2.0, binutils 2.45, and newlib 4.5.0. Changing
-`gcc_version` changes the distribution archive filename; it does not change the
-pinned source target. `gcc_args` adds GCC configure arguments. For
-`stage2_gcc_w64`, `host_toolchain` is a Linux-to-x86_64-w64-mingw32 compiler
-and `target_toolchain` is a Linux-to-`target` compiler built from the same GCC
-version.
-
 ## Userland
 
 The userland is a directory tree prepended to `PATH`. The supported minimal
@@ -324,102 +286,6 @@ It does not contain a compiler, binutils, CMake, or Python. Add those through
 Audit custom trees: using a stage2 label or wrapper alone does not establish
 their provenance.
 
-## Exported constants
-
-These constants are string lists intended for composing GCC-family builds.
-`STAGE_CC` and `BUILD_TRIPLE_ARG` are `select()` values that choose such a list
-for the configured CPU.
-
-```starlark
-load(
-    "@stage2.bzl",
-    "BINUTILS_ARGS",
-    "BUILD_TRIPLE_ARG",
-    "GCC_NEWLIB_ARGS",
-    "MINGW_HOST_CC",
-    "OPT_FLAGS",
-    "STAGE_CC",
-    "W64_OPT_FLAGS",
-)
-```
-
-### `STAGE_CC`
-
-Selected by the configured CPU:
-
-| CPU | Values |
-| --- | --- |
-| `x86_64` | `CC=x86_64-unknown-linux-musl-gcc -static`, `CXX=x86_64-unknown-linux-musl-g++ -static` |
-| `aarch64` | `CC=aarch64-unknown-linux-musl-gcc -static`, `CXX=aarch64-unknown-linux-musl-g++ -static` |
-
-### `BUILD_TRIPLE_ARG`
-
-Selected by the configured CPU:
-
-| CPU | Value |
-| --- | --- |
-| `x86_64` | `--build=x86_64-unknown-linux-musl` |
-| `aarch64` | `--build=aarch64-unknown-linux-musl` |
-
-### `OPT_FLAGS`
-
-```text
-CFLAGS=-O2
-CXXFLAGS=-O2
-LDFLAGS=--static
-```
-
-### `BINUTILS_ARGS`
-
-```text
---disable-nls
---disable-werror
---disable-gdb
---disable-gdbserver
---disable-sim
---disable-gprofng
---disable-shared
---enable-static
---enable-deterministic-archives
---disable-dependency-tracking
-```
-
-### `MINGW_HOST_CC`
-
-```text
-CC=x86_64-w64-mingw32-gcc -static
-CXX=x86_64-w64-mingw32-g++ -static
-```
-
-### `W64_OPT_FLAGS`
-
-```text
-CFLAGS=-O2
-CXXFLAGS=-O2
-LDFLAGS=--static -Wl,--no-insert-timestamp
-```
-
-### `GCC_NEWLIB_ARGS`
-
-```text
---enable-languages=c,c++
---with-newlib
---disable-shared
---disable-threads
---disable-tls
---disable-nls
---disable-libssp
---disable-libquadmath
---disable-libgomp
---disable-multilib
---enable-checking=release
---disable-dependency-tracking
---disable-libstdcxx-pch
-```
-
-The explicit `--static` spellings are intentional: some libtool-generated
-scripts do not preserve plain `-static`.
-
 ## Public trees
 
 The `@stage2.bzl//trees` package provides:
@@ -429,11 +295,6 @@ The `@stage2.bzl//trees` package provides:
 | `:cc` | Static GCC 15.2.0, musl 1.2.5, and binutils 2.45 toolchain |
 | `:default_userland` | The default userland listed above |
 | `:bash`, `:coreutils`, `:sed`, `:grep`, `:findutils`, `:diffutils`, `:tar`, `:gzip`, `:gawk`, `:make` | Individual default-userland components |
-| `:bsdtar` | libarchive/bsdtar tree |
-| `:cmake` | CMake 3.31.7 |
-| `:python` | Python 3.12.8 |
-| `:clang` | Clang 22.1.8 compiler, tools, and resource headers; no sysroot or runtime |
-| `:macos-sdk` | Pruned macOS headers, text `.tbd` stubs, and non-executable SDK metadata |
 
 The documented exports of `stage2.bzl`, the parameters above, and these tree
 labels are the public API. Other repository targets, scripts, logs, and example

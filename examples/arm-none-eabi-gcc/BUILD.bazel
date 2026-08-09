@@ -2,11 +2,11 @@
 # 4.5.0. Single (default) multilib — Arm's own distribution builds the
 # rmprofile/aprofile multilib lists; widen via gcc_args if needed.
 
-load("@stage2.bzl", "stage2_gcc")
+load("//:gcc.bzl", "newlib_gcc")
 
 package(default_visibility = ["//:__subpackages__"])
 
-stage2_gcc(
+newlib_gcc(
     name = "arm-none-eabi-gcc",
     target = "arm-none-eabi",
 )
