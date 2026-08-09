@@ -2,8 +2,8 @@
 
 Scope: this is specifically the newlib bare-metal recipe (binutils +
 GCC/newlib combined tree). Targets with their own C runtime story build
-their sequence out of stage2_autotools_build instead — see
-//examples/mingw-w64-gcc.
+their sequence out of stage2_autotools_build instead — see the
+examples/mingw-w64-gcc package.
 """
 
 load(

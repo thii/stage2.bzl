@@ -51,7 +51,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/stage2-repository-cache
-          key: bazel-repositories-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'extensions.bzl', 'internal/gcc_combined_repo.bzl') }}
+          key: bazel-repositories-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'extensions.bzl', 'internal/gcc_combined_repo.bzl', 'examples/MODULE.bazel', 'examples/MODULE.bazel.lock') }}
           restore-keys: |
             bazel-repositories-v2-${{ env.BAZEL_CACHE_SCOPE }}-
             bazel-repositories-${{ runner.os }}-${{ runner.arch }}-
@@ -70,12 +70,13 @@ jobs:
 
       # Each action already invokes make -j4, so keep one Bazel action active.
       - name: Build Linux toolchain
+        working-directory: examples
         run: |
           bazel build \
             --jobs=1 \
             --repository_cache="$RUNNER_TEMP/stage2-repository-cache" \
             --disk_cache="$RUNNER_TEMP/stage2-disk-cache" \
-            //examples/riscv-none-elf-gcc:dist
+            //riscv-none-elf-gcc:dist
 
       - name: Save Bazel results
         if: ${{ success() && steps.bazel_cache.outputs.cache-hit != 'true' }}
@@ -88,7 +89,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: riscv-none-elf-gcc-linux-${{ matrix.arch }}
-          path: bazel-bin/examples/riscv-none-elf-gcc/riscv-none-elf-gcc-15.2.0.tar.gz
+          path: examples/bazel-bin/riscv-none-elf-gcc/riscv-none-elf-gcc-15.2.0.tar.gz
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
@@ -116,7 +117,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/stage2-repository-cache
-          key: bazel-repositories-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'extensions.bzl', 'internal/gcc_combined_repo.bzl') }}
+          key: bazel-repositories-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'extensions.bzl', 'internal/gcc_combined_repo.bzl', 'examples/MODULE.bazel', 'examples/MODULE.bazel.lock') }}
           restore-keys: |
             bazel-repositories-v2-${{ env.BAZEL_CACHE_SCOPE }}-
             bazel-repositories-${{ runner.os }}-${{ runner.arch }}-
@@ -134,13 +135,14 @@ jobs:
         uses: bazel-contrib/setup-bazel@0.19.0
 
       - name: Build Windows toolchain and PE check
+        working-directory: examples
         run: |
           bazel build \
             --jobs=1 \
             --repository_cache="$RUNNER_TEMP/stage2-repository-cache" \
             --disk_cache="$RUNNER_TEMP/stage2-disk-cache" \
-            //examples/riscv-none-elf-gcc-w64:dist \
-            //examples/riscv-none-elf-gcc-w64:riscv-none-elf-gcc-w64-pe-check
+            //riscv-none-elf-gcc-w64:dist \
+            //riscv-none-elf-gcc-w64:riscv-none-elf-gcc-w64-pe-check
 
       - name: Save Bazel results
         if: ${{ success() && steps.bazel_cache.outputs.cache-hit != 'true' }}
@@ -153,7 +155,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: riscv-none-elf-gcc-windows-x86_64
-          path: bazel-bin/examples/riscv-none-elf-gcc-w64/riscv-none-elf-gcc-w64-15.2.0.tar.gz
+          path: examples/bazel-bin/riscv-none-elf-gcc-w64/riscv-none-elf-gcc-w64-15.2.0.tar.gz
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
@@ -167,12 +169,12 @@ jobs:
         include:
           - arch: x86_64
             runner: ubuntu-24.04
-            target: //examples/clang:clang-darwin-x86_64-dist
-            file: bazel-bin/examples/clang/clang-darwin-x86_64.tar.gz
+            target: //clang:clang-darwin-x86_64-dist
+            file: examples/bazel-bin/clang/clang-darwin-x86_64.tar.gz
           - arch: arm64
             runner: ubuntu-24.04-arm
-            target: //examples/clang:clang-darwin-arm64-dist
-            file: bazel-bin/examples/clang/clang-darwin-arm64.tar.gz
+            target: //clang:clang-darwin-arm64-dist
+            file: examples/bazel-bin/clang/clang-darwin-arm64.tar.gz
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 360
     env:
@@ -194,7 +196,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/stage2-repository-cache
-          key: bazel-repositories-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'extensions.bzl', 'internal/gcc_combined_repo.bzl') }}
+          key: bazel-repositories-v2-${{ env.BAZEL_CACHE_SCOPE }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'extensions.bzl', 'internal/gcc_combined_repo.bzl', 'examples/MODULE.bazel', 'examples/MODULE.bazel.lock') }}
           restore-keys: |
             bazel-repositories-v2-${{ env.BAZEL_CACHE_SCOPE }}-
             bazel-repositories-${{ runner.os }}-${{ runner.arch }}-
@@ -223,6 +225,7 @@ jobs:
       # still fails it.
       - name: Build Darwin toolchain
         id: build
+        working-directory: examples
         run: |
           set +e
           timeout --signal=INT 320m bazel build \
@@ -248,7 +251,7 @@ jobs:
       - name: Check whether the toolchain finished this run
         id: outcome
         run: |
-          if [[ -f "${{ matrix.file }}" ]]; then
+          if [[ -f "${{ github.workspace }}/${{ matrix.file }}" ]]; then
             echo "built=true" >> "$GITHUB_OUTPUT"
           else
             echo "built=false" >> "$GITHUB_OUTPUT"

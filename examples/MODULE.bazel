@@ -1,0 +1,27 @@
+module(name = "stage2_examples")
+
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "stage2.bzl", version = "0.0.1")
+local_path_override(
+    module_name = "stage2.bzl",
+    path = "..",
+)
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "mingw_w64_src",
+    build_file_content = """filegroup(
+    name = "srcs",
+    srcs = glob(["**"]),
+    visibility = ["//visibility:public"],
+)
+exports_files([
+    "mingw-w64-headers/configure",
+    "mingw-w64-crt/configure",
+])
+""",
+    sha256 = "cc41898aac4b6e8dd5cffd7331b9d9515b912df4420a3a612b5ea2955bbeed2f",
+    strip_prefix = "mingw-w64-v12.0.0",
+    urls = ["https://downloads.sourceforge.net/project/mingw-w64/mingw-w64/mingw-w64-release/mingw-w64-v12.0.0.tar.bz2"],
+)

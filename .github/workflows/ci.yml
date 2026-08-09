@@ -40,6 +40,56 @@ jobs:
         working-directory: e2e/consumer
         run: bazel query --lockfile_mode=off //...
 
+  examples:
+    name: Examples workspace
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Reclaim runner disk
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+
+      - name: Allow the hermetic Linux sandbox
+        run: |
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+      - name: Cache pinned source downloads
+        uses: actions/cache@v5
+        with:
+          path: ${{ runner.temp }}/stage2-examples-repository-cache
+          key: bazel-examples-repositories-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock', 'extensions.bzl', 'internal/gcc_combined_repo.bzl', 'examples/MODULE.bazel', 'examples/MODULE.bazel.lock') }}
+          restore-keys: |
+            bazel-examples-repositories-v1-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.19.0
+        with:
+          bazelisk-cache: true
+
+      - name: Start shared Bazel remote cache
+        id: remote_cache
+        uses: thii/bazel-gha-remote-cache@6794727832d09a0a98c6edbbd013a10ddac2925a # v0.0.7
+        with:
+          expected-writers: "3"
+          fail-job-on-cache-error: true
+          github-token: ${{ github.token }}
+          mode: read-write
+          storage-mode: pack
+
+      - name: Build examples
+        timeout-minutes: 315
+        working-directory: examples
+        run: |
+          /usr/bin/timeout --signal=INT --kill-after=2m 300m \
+            bazel --bazelrc="${{ steps.remote_cache.outputs.bazelrc }}" build \
+              --jobs=1 \
+              --repository_cache="$RUNNER_TEMP/stage2-examples-repository-cache" \
+              //...
+
   consumer:
     name: External consumer bootstrap seed equivalence (${{ matrix.arch }})
     strategy:
@@ -82,7 +132,7 @@ jobs:
         id: remote_cache
         uses: thii/bazel-gha-remote-cache@6794727832d09a0a98c6edbbd013a10ddac2925a # v0.0.7
         with:
-          expected-writers: "2"
+          expected-writers: "3"
           fail-job-on-cache-error: true
           github-token: ${{ github.token }}
           mode: read-write

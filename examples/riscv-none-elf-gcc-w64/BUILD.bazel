@@ -1,6 +1,6 @@
 # Example Windows-hosted GNU RISC-V bare-metal toolchain: the same
 # GCC 15.2.0 / binutils 2.45 / newlib 4.5.0 configuration as
-# //examples/riscv-none-elf-gcc,
+# //riscv-none-elf-gcc,
 # but host=x86_64-w64-mingw32 (a Canadian cross). Built entirely inside
 # the empty Linux sandbox; no build action ever runs on Windows. The
 # result is a relocatable tree of static .exe files that need only the
@@ -8,7 +8,7 @@
 
 load("@stage2.bzl", "stage2_gcc_w64")
 
-package(default_visibility = ["//examples:__subpackages__"])
+package(default_visibility = ["//:__subpackages__"])
 
 stage2_gcc_w64(
     name = "riscv-none-elf-gcc-w64",
@@ -16,7 +16,7 @@ stage2_gcc_w64(
         "--with-arch=rv32imac",
         "--with-abi=ilp32",
     ],
-    host_toolchain = "//examples/mingw-w64-gcc",
+    host_toolchain = "//mingw-w64-gcc",
     target = "riscv-none-elf",
-    target_toolchain = "//examples/riscv-none-elf-gcc",
+    target_toolchain = "//riscv-none-elf-gcc",
 )

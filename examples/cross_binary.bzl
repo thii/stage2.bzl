@@ -59,7 +59,7 @@ cross_binary = rule(
             allow_single_file = True,
         ),
         "userland": attr.label(
-            default = Label("//trees:default_userland"),
+            default = Label("@stage2.bzl//trees:default_userland"),
             allow_single_file = True,
             cfg = "exec",
         ),

@@ -10,10 +10,7 @@ package(default_visibility = [":internal_consumers"])
 
 package_group(
     name = "internal_consumers",
-    packages = [
-        "//examples/...",
-        "//trees",
-    ],
+    packages = ["//trees"],
 )
 
 # ---------------------------------------------------------------------------

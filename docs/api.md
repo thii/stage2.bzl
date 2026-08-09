@@ -4,7 +4,8 @@ Load supported symbols from the repository entry point. Each example includes
 the symbols it needs.
 
 Only the parameters documented here are supported. Targets under `//internal`
-and `//examples` are implementation details.
+are implementation details. The repository's `examples` directory is a
+separate consumer workspace.
 
 ## Compiler seed
 

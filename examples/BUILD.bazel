@@ -30,7 +30,7 @@ cross_binary(
         "-mabi=ilp32",
     ] + _BAREMETAL_COPTS,
     target_prefix = "riscv-none-elf",
-    toolchain = "//examples/riscv-none-elf-gcc",
+    toolchain = "//riscv-none-elf-gcc",
 )
 
 cross_binary(
@@ -42,7 +42,7 @@ cross_binary(
     hdrs = ["compute.h"],
     copts = _BAREMETAL_COPTS,
     target_prefix = "aarch64-none-elf",
-    toolchain = "//examples/aarch64-none-elf-gcc",
+    toolchain = "//aarch64-none-elf-gcc",
 )
 
 cross_binary(
@@ -54,7 +54,7 @@ cross_binary(
     hdrs = ["compute.h"],
     copts = _BAREMETAL_COPTS,
     target_prefix = "arm-none-eabi",
-    toolchain = "//examples/arm-none-eabi-gcc",
+    toolchain = "//arm-none-eabi-gcc",
 )
 
 cross_binary(
@@ -70,7 +70,7 @@ cross_binary(
     ],
     out_ext = "exe",
     target_prefix = "x86_64-w64-mingw32",
-    toolchain = "//examples/mingw-w64-gcc",
+    toolchain = "//mingw-w64-gcc",
 )
 
 # macOS demo: the from-source clang + ld64.lld link an arm64 Mach-O
@@ -85,9 +85,9 @@ stage2_run(
     inputs = {
         "COMPUTE_C": ":compute.c",
         "HELLO_C": ":hello.c",
-        "SDK": "//trees:macos-sdk",
+        "SDK": "@stage2.bzl//trees:macos-sdk",
     },
-    path_trees = ["//trees:clang"],
+    path_trees = ["@stage2.bzl//trees:clang"],
     script = """clang -target arm64-apple-macos11 -isysroot %{SDK} -fuse-ld=lld \
     -Os -Wall -o %{OUT} %{HELLO_C} %{COMPUTE_C}
 magic=$(od -An -tx1 -N4 %{OUT} | tr -d ' \\n')
